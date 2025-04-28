@@ -2,12 +2,11 @@ import os
 import json
 import hashlib
 import subprocess
-from PyQt6 import QtWidgets
+from PyQt6 import QtWidgets, QtCore, QtGui
 from worker import WorkerThread
 
 class MainWindow(QtWidgets.QMainWindow):
-    """GUI for USB Bootable Creator with checksum, cluster size,
-    cancel, dual-progress bars with proper signal connections."""
+    """GUI for USB Bootable Creator without static progress bars, using verbose log and spinner."""
     def __init__(self):
         super().__init__()
         self.setWindowTitle('USB Bootable Creator')
@@ -17,6 +16,24 @@ class MainWindow(QtWidgets.QMainWindow):
     def _setup_ui(self):
         central = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(central)
+
+        # Spinner and OS Glyph indicator
+        spin_layout = QtWidgets.QHBoxLayout()
+        # OS Glyph
+        self.os_icon = QtWidgets.QLabel('')
+        icon_font = QtGui.QFont()
+        icon_font.setFamily('monospace')  # fallback if no nerd font
+        icon_font.setPointSize(24)
+        self.os_icon.setFont(icon_font)
+        self.os_icon.setFixedSize(32, 32)
+        spin_layout.addWidget(self.os_icon)
+        # Spinner indicator
+        self.spinner = QtWidgets.QProgressBar()
+        self.spinner.setRange(0, 0)  # infinite mode
+        self.spinner.setVisible(False)
+        self.spinner.setFixedHeight(32)
+        spin_layout.addWidget(self.spinner)
+        layout.addLayout(spin_layout)
 
         # ISO selection
         iso_layout = QtWidgets.QHBoxLayout()
@@ -68,14 +85,6 @@ class MainWindow(QtWidgets.QMainWindow):
         # WIM option
         self.wim_chk = QtWidgets.QCheckBox('Use wimlib to split install.wim')
         layout.addWidget(self.wim_chk)
-
-        # Progress bars
-        self.overall_bar = QtWidgets.QProgressBar()
-        self.overall_bar.setRange(0, 100)
-        layout.addWidget(self.overall_bar)
-        self.step_bar = QtWidgets.QProgressBar()
-        self.step_bar.setRange(0, 100)
-        layout.addWidget(self.step_bar)
 
         # Log area
         self.log_area = QtWidgets.QPlainTextEdit()
@@ -150,58 +159,41 @@ class MainWindow(QtWidgets.QMainWindow):
             self.close()
 
     def _cancel_process(self):
-        for m in ('/mnt/ntfs', '/mnt/vfat', '/mnt/iso'):
-            if os.path.ismount(m):
-                subprocess.run(['umount', m], check=False)
-            try:
-                os.rmdir(m)
-            except:
-                pass
+        self.spinner.setVisible(False)
         self.log_area.appendPlainText('Cleanup complete.')
         self.btn_start.setEnabled(True)
 
     def _start_process(self):
-        if self.chk_verify.isChecked() and not self.btn_start.isEnabled():
-            QtWidgets.QMessageBox.warning(
-                self, 'Checksum', 'Please verify checksum first.'
-            )
-            return
         iso = self.iso_edit.text().strip()
         dev = self.dev_combo.currentData()
+        if self.chk_verify.isChecked() and not self.btn_start.isEnabled():
+            QtWidgets.QMessageBox.warning(self, 'Checksum', 'Please verify checksum first.')
+            return
         if not iso or not os.path.isfile(iso):
-            QtWidgets.QMessageBox.warning(
-                self, 'Invalid ISO', 'Select a valid ISO.'
-            )
+            QtWidgets.QMessageBox.warning(self, 'Invalid ISO', 'Select a valid ISO.')
             return
         if not dev:
-            QtWidgets.QMessageBox.warning(
-                self, 'No Device', 'Select a USB device.'
-            )
+            QtWidgets.QMessageBox.warning(self, 'No Device', 'Select a USB device.')
             return
-        resp = QtWidgets.QMessageBox.question(
-            self, 'Confirm', f'All data on {dev} will be erased. Continue?',
-            QtWidgets.QMessageBox.StandardButton.Yes |
-            QtWidgets.QMessageBox.StandardButton.No
-        )
-        if resp != QtWidgets.QMessageBox.StandardButton.Yes:
-            return
+        # Detect OS type early
+        temp_worker = WorkerThread(iso, dev, self.wim_chk.isChecked(), self.cs_combo.currentText())
+        iso_type = 'windows' if temp_worker._is_windows_iso() else 'linux'
+        # Set glyph using unicode literals
+        glyph = '' if iso_type == 'windows' else ''
+        self.os_icon.setText(glyph)
+        # Show spinner
+        self.spinner.setVisible(True)
         self.btn_start.setEnabled(False)
         self.log_area.clear()
-        cluster = self.cs_combo.currentText()
-        self.worker = WorkerThread(iso, dev, self.wim_chk.isChecked(), cluster)
-        self.worker.overall.connect(lambda v: self.overall_bar.setValue(v))
-        self.worker.step.connect(lambda v: self.step_bar.setValue(v))
+        self.worker = temp_worker
         self.worker.log.connect(self.log_area.appendPlainText)
-        self.worker.done.connect(lambda ok, msg: self._on_done(ok, msg))
+        self.worker.done.connect(self._on_done)
         self.worker.start()
 
     def _on_done(self, success, message):
+        self.spinner.setVisible(False)
         if success:
-            QtWidgets.QMessageBox.information(
-                self, 'Success', 'USB creation completed.'
-            )
+            QtWidgets.QMessageBox.information(self, 'Success', 'USB creation completed.')
         else:
-            QtWidgets.QMessageBox.critical(
-                self, 'Error', f'Failed: {message}'
-            )
+            QtWidgets.QMessageBox.critical(self, 'Error', f'Failed: {message}')
         self.btn_start.setEnabled(True)
