@@ -4,14 +4,14 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-cxx-qt = "0.7"
-cxx = "1.0"
 anyhow = "1.0"
 tempfile = "3.10"
 libc = "0.2"
 serde_json = "1.0"
 gtk4 = "0.9.6"
 glib = "0.18"
+which = "4.4"
+gio = "0.20.11"
 
 [lib]
 name = "rust_usb_bootable_creator"

@@ -75,8 +75,20 @@ pub fn write_windows_iso_to_usb(iso_path: &str, usb_device: &str, use_wim: bool,
     Ok(())
 }
 
+// Helper for verbose step output
+fn print_step(step: usize, total: usize, msg: &str) {
+    println!("[STEP] {}/{}: {}", step, total, msg);
+    std::io::stdout().flush().ok();
+}
+fn print_error(step: usize, total: usize, msg: &str) {
+    println!("[ERROR] {}/{}: {}", step, total, msg);
+    std::io::stdout().flush().ok();
+}
+
 // Streaming version: print log lines directly to stdout and flush after each
-pub fn write_windows_iso_to_usb_stream(iso_path: &str, usb_device: &str) -> io::Result<()> {
+pub fn write_windows_iso_to_usb_stream(iso_path: &str, usb_device: &str, cluster_bytes: u64) -> io::Result<()> {
+    let total_steps = 15;
+    let mut step = 1;
     let base = tempfile::tempdir_in("/mnt").map_err(|e| io::Error::new(io::ErrorKind::Other, format!("Failed to create tempdir: {}", e)))?;
     let iso_m = base.path().join("iso");
     let boot_m = base.path().join("boot");
@@ -84,58 +96,59 @@ pub fn write_windows_iso_to_usb_stream(iso_path: &str, usb_device: &str) -> io::
     for m in [&iso_m, &boot_m, &inst_m] {
         std::fs::create_dir_all(m)?;
     }
-    let mut cleanup = || {
+    let cleanup = || {
         let _ = std::process::Command::new("umount").arg(&inst_m).status();
         let _ = std::process::Command::new("umount").arg(&boot_m).status();
         let _ = std::process::Command::new("umount").arg(&iso_m).status();
         let _ = std::fs::remove_dir_all(base.path());
         let _ = std::process::Command::new("sync").status();
     };
-    println!("Wiping and partitioning..."); io::stdout().flush().ok();
+    print_step(step, total_steps, "Wiping and partitioning..."); step += 1;
     let status = std::process::Command::new("pkexec").arg("wipefs").arg("-a").arg(usb_device).status()?;
-    if !status.success() { cleanup(); return Err(io::Error::new(io::ErrorKind::Other, "wipefs failed")); }
+    if !status.success() { print_error(step, total_steps, "wipefs failed"); cleanup(); return Err(io::Error::new(io::ErrorKind::Other, "wipefs failed")); }
+    print_step(step, total_steps, "Creating GPT partition table..."); step += 1;
     let status = std::process::Command::new("pkexec").arg("parted").args(["-s", usb_device, "mklabel", "gpt"]).status()?;
-    if !status.success() { cleanup(); return Err(io::Error::new(io::ErrorKind::Other, "parted mklabel failed")); }
+    if !status.success() { print_error(step, total_steps, "parted mklabel failed"); cleanup(); return Err(io::Error::new(io::ErrorKind::Other, "parted mklabel failed")); }
     let parts = [
         ("BOOT", "fat32", "1GiB", "BOOT"),
         ("ESD-USB", "ntfs", "100%", "ESD-USB")
     ];
     let mut start = "0%";
     for (label, fstype, end, _vol) in parts.iter() {
-        println!("Creating partition {}...", label); io::stdout().flush().ok();
+        print_step(step, total_steps, &format!("Creating partition {}...", label)); step += 1;
         let status = std::process::Command::new("pkexec").arg("parted").args(["-s", usb_device, "mkpart", label, fstype, start, end]).status()?;
-        if !status.success() { cleanup(); return Err(io::Error::new(io::ErrorKind::Other, "parted mkpart failed")); }
+        if !status.success() { print_error(step, total_steps, &format!("parted mkpart {} failed", label)); cleanup(); return Err(io::Error::new(io::ErrorKind::Other, "parted mkpart failed")); }
         start = end;
     }
     let p1 = format!("{}1", usb_device);
     let p2 = format!("{}2", usb_device);
-    println!("Formatting BOOT as FAT32..."); io::stdout().flush().ok();
+    print_step(step, total_steps, "Formatting BOOT as FAT32..."); step += 1;
     let status = std::process::Command::new("pkexec").arg("mkfs.vfat").args(["-F32", "-n", "BOOT", &p1]).status()?;
-    if !status.success() { cleanup(); return Err(io::Error::new(io::ErrorKind::Other, "mkfs.vfat failed")); }
-    println!("Formatting INSTALL as NTFS..."); io::stdout().flush().ok();
-    let status = std::process::Command::new("pkexec").arg("mkfs.ntfs").args(["--quick", "-L", "ESD-USB", &p2]).status()?;
-    if !status.success() { cleanup(); return Err(io::Error::new(io::ErrorKind::Other, "mkfs.ntfs failed")); }
-    println!("Mounting ISO..."); io::stdout().flush().ok();
+    if !status.success() { print_error(step, total_steps, "mkfs.vfat failed"); cleanup(); return Err(io::Error::new(io::ErrorKind::Other, "mkfs.vfat failed")); }
+    print_step(step, total_steps, "Formatting INSTALL as NTFS..."); step += 1;
+    let status = std::process::Command::new("pkexec").arg("mkfs.ntfs").args(["--quick", "-c", &cluster_bytes.to_string(), "-L", "ESD-USB", &p2]).status()?;
+    if !status.success() { print_error(step, total_steps, "mkfs.ntfs failed"); cleanup(); return Err(io::Error::new(io::ErrorKind::Other, "mkfs.ntfs failed")); }
+    print_step(step, total_steps, "Mounting ISO..."); step += 1;
     let status = std::process::Command::new("pkexec").arg("mount").args(["-o", "loop,ro", iso_path, iso_m.to_str().unwrap()]).status()?;
-    if !status.success() { cleanup(); return Err(io::Error::new(io::ErrorKind::Other, "mount ISO failed")); }
-    println!("Mounting BOOT partition..."); io::stdout().flush().ok();
+    if !status.success() { print_error(step, total_steps, "mount ISO failed"); cleanup(); return Err(io::Error::new(io::ErrorKind::Other, "mount ISO failed")); }
+    print_step(step, total_steps, "Mounting BOOT partition..."); step += 1;
     let status = std::process::Command::new("pkexec").arg("mount").args([&p1, boot_m.to_str().unwrap()]).status()?;
-    if !status.success() { cleanup(); return Err(io::Error::new(io::ErrorKind::Other, "mount BOOT failed")); }
-    println!("Copying files to BOOT..."); io::stdout().flush().ok();
+    if !status.success() { print_error(step, total_steps, "mount BOOT failed"); cleanup(); return Err(io::Error::new(io::ErrorKind::Other, "mount BOOT failed")); }
+    print_step(step, total_steps, "Copying files to BOOT..."); step += 1;
     let status = std::process::Command::new("pkexec").arg("rsync").args(["-a", "--no-owner", "--no-group", "--exclude", "sources/", &format!("{}/", iso_m.to_str().unwrap()), &format!("{}/", boot_m.to_str().unwrap())]).status()?;
-    if !status.success() { cleanup(); return Err(io::Error::new(io::ErrorKind::Other, "rsync BOOT failed")); }
-    println!("Copying boot.wim..."); io::stdout().flush().ok();
+    if !status.success() { print_error(step, total_steps, "rsync BOOT failed"); cleanup(); return Err(io::Error::new(io::ErrorKind::Other, "rsync BOOT failed")); }
+    print_step(step, total_steps, "Copying boot.wim..."); step += 1;
     let _ = std::fs::create_dir_all(boot_m.join("sources"));
     let status = std::process::Command::new("pkexec").arg("cp").args([iso_m.join("sources/boot.wim").to_str().unwrap(), boot_m.join("sources").to_str().unwrap()]).status()?;
-    if !status.success() { cleanup(); return Err(io::Error::new(io::ErrorKind::Other, "cp boot.wim failed")); }
-    println!("Mounting INSTALL partition..."); io::stdout().flush().ok();
+    if !status.success() { print_error(step, total_steps, "cp boot.wim failed"); cleanup(); return Err(io::Error::new(io::ErrorKind::Other, "cp boot.wim failed")); }
+    print_step(step, total_steps, "Mounting INSTALL partition..."); step += 1;
     let status = std::process::Command::new("pkexec").arg("mount").args([&p2, inst_m.to_str().unwrap()]).status()?;
-    if !status.success() { cleanup(); return Err(io::Error::new(io::ErrorKind::Other, "mount INSTALL failed")); }
-    println!("Copying files to INSTALL; Please wait this could take a bit..."); io::stdout().flush().ok();
+    if !status.success() { print_error(step, total_steps, "mount INSTALL failed"); cleanup(); return Err(io::Error::new(io::ErrorKind::Other, "mount INSTALL failed")); }
+    print_step(step, total_steps, "Copying files to INSTALL; Please wait this could take a bit..."); step += 1;
     let status = std::process::Command::new("pkexec").arg("rsync").args(["-a", "--no-owner", "--no-group", &format!("{}/", iso_m.to_str().unwrap()), &format!("{}/", inst_m.to_str().unwrap())]).status()?;
-    if !status.success() { cleanup(); return Err(io::Error::new(io::ErrorKind::Other, "rsync INSTALL failed")); }
-    println!("Cleaning up mounts; We're almost done, please wait..."); io::stdout().flush().ok();
+    if !status.success() { print_error(step, total_steps, "rsync INSTALL failed"); cleanup(); return Err(io::Error::new(io::ErrorKind::Other, "rsync INSTALL failed")); }
+    print_step(step, total_steps, "Cleaning up mounts; We're almost done, please wait..."); step += 1;
     cleanup();
-    println!("Windows USB creation completed."); io::stdout().flush().ok();
+    print_step(step, total_steps, "Windows USB creation completed.");
     Ok(())
 }

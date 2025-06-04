@@ -24,8 +24,9 @@ fn main() {
     if is_win {
         println!("Detected: Windows ISO");
         io::stdout().flush().ok();
+        let cluster_bytes: u64 = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(4096);
         let result = windows_flow::write_windows_iso_to_usb_stream(
-            iso_path, usb_device
+            iso_path, usb_device, cluster_bytes
         );
         if let Err(e) = result {
             eprintln!("Failed to write ISO: {}", e);
@@ -34,8 +35,9 @@ fn main() {
     } else {
         println!("Detected: Linux ISO");
         io::stdout().flush().ok();
+        let cluster_bytes: u64 = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(4096);
         let result = linux_flow::write_iso_to_usb_stream(
-            iso_path, usb_device
+            iso_path, usb_device, cluster_bytes
         );
         if let Err(e) = result {
             eprintln!("Failed to write ISO: {}", e);
