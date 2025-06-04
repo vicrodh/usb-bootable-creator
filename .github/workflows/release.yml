@@ -1,0 +1,81 @@
+name: Build and Package MajUSB Bootable Creator
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target:
+          - x86_64-unknown-linux-gnu
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install system dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y build-essential libgtk-4-dev libglib2.0-dev libgio2.0-dev libudev-dev pkg-config zlib1g-dev libssl-dev libparted-dev dosfstools ntfs-3g parted rsync policykit-1 flatpak-builder rpm
+
+      - name: Build release binaries
+        run: cargo build --release
+
+      - name: Prepare assets for packaging
+        run: |
+          mkdir -p dist/icons
+          cp assets/icons/icon-128x128.png dist/icons/majusb-bootable-creator.png
+          cp majusb-bootable-creator.desktop dist/
+          cp target/release/rust-usb-bootable-creator dist/
+          cp target/release/cli_helper dist/
+
+      - name: Build .deb package
+        run: |
+          cargo install cargo-deb
+          cargo deb --no-build --target ${{ matrix.target }}
+          cp target/${{ matrix.target }}/debian/*.deb dist/ || cp target/debian/*.deb dist/
+
+      - name: Build .rpm package
+        run: |
+          cargo install cargo-rpm
+          cargo rpm build --no-build --target ${{ matrix.target }}
+          find target/release/rpmbuild/RPMS/ -name '*.rpm' -exec cp {} dist/ \;
+
+      - name: Build Flatpak
+        run: |
+          flatpak-builder --force-clean dist/flatpak majusb-bootable-creator.flatpak.yml
+
+      - name: Archive PKGBUILD and source
+        run: |
+          tar czf dist/majusb-bootable-creator-$(grep '^version' Cargo.toml | head -1 | cut -d'=' -f2 | tr -d ' "').tar.gz --exclude=target --exclude=dist --exclude=.git .
+          cp PKGBUILD dist/
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: majusb-bootable-creator-binaries
+          path: dist/
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          files: |
+            dist/*.deb
+            dist/*.rpm
+            dist/*.tar.gz
+            dist/flatpak/*
+            dist/PKGBUILD
+            dist/rust-usb-bootable-creator
+            dist/cli_helper
+            dist/majusb-bootable-creator.desktop
+            dist/icons/majusb-bootable-creator.png
