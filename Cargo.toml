@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 authors = ["Vic RH <blitzkriegfc@gmail.com>"]
 license = "MIT"
+description = "A modern, cross-platform USB bootable drive creator with a GTK4 GUI."
 
 [dependencies]
 anyhow = "1.0"
