@@ -9,12 +9,9 @@ A modern, cross-platform USB bootable drive creator written in Rust with a GTK4 
 - **Cross-platform**: Works on Linux (tested on major distros).
 - **Write Linux & Windows ISOs**: Handles both Linux and Windows bootable USB creation.
 - **Privilege Escalation**: Uses a secure helper binary with `pkexec` only when needed.
-- **Real-time Log & Progress**: See detailed output and progress as the ISO is written.
 - **Cluster Size Selection**: Choose NTFS cluster size for Windows ISOs.
 - **Dependency Check**: Detects missing system packages and provides install instructions.
-- **System Notifications**: Notifies you when the operation completes.
 - **Auto-refresh Device List**: Detects USB device changes automatically.
-- **Robust Error Handling**: Clear guidance and error messages.
 
 ---
 
