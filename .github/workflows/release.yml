@@ -25,7 +25,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt update
-          sudo apt install -y build-essential libgtk-4-dev libglib2.0-dev libgio2.0-dev libudev-dev pkg-config zlib1g-dev libssl-dev libparted-dev dosfstools ntfs-3g parted rsync policykit-1 flatpak-builder rpm
+          sudo apt install -y build-essential libgtk-4-dev libglib2.0-dev libudev-dev pkg-config zlib1g-dev libssl-dev libparted-dev dosfstools ntfs-3g parted rsync policykit-1 flatpak-builder rpm
 
       - name: Build release binaries
         run: cargo build --release
