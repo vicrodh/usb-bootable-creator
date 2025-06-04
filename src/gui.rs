@@ -15,6 +15,7 @@ pub fn run_gui() {
             .default_width(500)
             .default_height(400)
             .build();
+        let window_weak = window.downgrade();
 
         // Main vertical box
         let vbox = GtkBox::new(Orientation::Vertical, 12);
@@ -72,9 +73,9 @@ pub fn run_gui() {
         // --- Event handlers ---
         // ISO browse (no detection here)
         let iso_entry_clone = iso_entry.clone();
-        let window_weak = window.downgrade();
+        let window_weak_browse = window_weak.clone();
         iso_button.connect_clicked(move |_| {
-            if let Some(window) = window_weak.upgrade() {
+            if let Some(window) = window_weak_browse.upgrade() {
                 let dialog = FileChooserDialog::new(
                     Some("Select ISO Image"),
                     Some(&window),
@@ -193,16 +194,44 @@ pub fn run_gui() {
             let buffer_clone = buffer.clone();
             let os_label_clone2 = os_label_clone.clone();
             let progress_bar_clone2 = progress_bar_clone.clone();
+            let log_view_clone2 = log_view_clone.clone();
+            let window_weak2 = window_weak.clone();
             gtk4::glib::idle_add_local(move || {
                 while let Ok(msg) = receiver.try_recv() {
                     match msg {
                         Ok(line) => {
                             if line == "__PROCESS_DONE__" {
                                 progress_bar_clone2.set_visible(false);
+                                // Show completion dialog
+                                if let Some(window) = window_weak2.upgrade() {
+                                    let dialog = gtk4::MessageDialog::builder()
+                                        .transient_for(&window)
+                                        .modal(true)
+                                        .text("USB creation complete!")
+                                        .message_type(gtk4::MessageType::Info)
+                                        .buttons(gtk4::ButtonsType::Ok)
+                                        .build();
+                                    dialog.connect_response(|dialog, _| dialog.close());
+                                    dialog.show();
+                                }
+                                // Auto-scroll to end
+                                let buffer = log_view_clone2.buffer();
+                                let mut end_iter = buffer.end_iter();
+                                log_view_clone2.scroll_to_iter(&mut end_iter, 0.0, false, 0.0, 1.0);
                                 return glib::ControlFlow::Break;
                             }
+                            // Insert the message
                             let mut end_iter = buffer_clone.end_iter();
                             buffer_clone.insert(&mut end_iter, &format!("{}\n", line));
+                            // Show copy message after partitioning
+                            if line.contains("Formatting INSTALL as NTFS") || line.contains("Formatting INSTALL as FAT32") {
+                                let mut end_iter = buffer_clone.end_iter();
+                                buffer_clone.insert(&mut end_iter, "I'm copying the files to the new device, please wait\n");
+                            }
+                            // Auto-scroll to end
+                            let buffer = log_view_clone2.buffer();
+                            let mut end_iter = buffer.end_iter();
+                            log_view_clone2.scroll_to_iter(&mut end_iter, 0.0, false, 0.0, 1.0);
                             if line.contains("Windows ISO") {
                                 os_label_clone2.set_text("Detected: Windows ISO");
                             } else if line.contains("Linux ISO") {
@@ -212,6 +241,10 @@ pub fn run_gui() {
                         Err(err) => {
                             buffer_clone.set_text(&err);
                             progress_bar_clone2.set_visible(false);
+                            // Auto-scroll to end
+                            let buffer = log_view_clone2.buffer();
+                            let mut end_iter = buffer.end_iter();
+                            log_view_clone2.scroll_to_iter(&mut end_iter, 0.0, false, 0.0, 1.0);
                             return glib::ControlFlow::Break;
                         }
                     }
