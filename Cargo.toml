@@ -11,6 +11,7 @@ tempfile = "3.10"
 libc = "0.2"
 serde_json = "1.0"
 gtk4 = "0.9.6"
+glib = "0.18"
 
 [lib]
 name = "rust_usb_bootable_creator"

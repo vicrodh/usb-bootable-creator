@@ -1,5 +1,6 @@
+use gtk4::glib::{self, clone, ControlFlow};
 use gtk4::prelude::*;
-use gtk4::{Application, ApplicationWindow, Button, ComboBoxText, Entry, FileChooserAction, FileChooserDialog, FileFilter, Orientation, Box as GtkBox, Label, ScrolledWindow, TextView};
+use gtk4::{Application, ApplicationWindow, Button, ComboBoxText, Entry, FileChooserAction, FileChooserDialog, FileFilter, Orientation, Box as GtkBox, Label, ScrolledWindow, TextView, ProgressBar};
 
 pub fn run_gui() {
     let app = Application::builder()
@@ -62,6 +63,12 @@ pub fn run_gui() {
         vbox.append(&log_label);
         vbox.append(&log_scroll);
 
+        // Add a progress bar below the log area
+        let progress_bar = ProgressBar::new();
+        progress_bar.set_show_text(false);
+        progress_bar.set_fraction(0.0);
+        vbox.append(&progress_bar);
+
         // --- Event handlers ---
         // ISO browse (no detection here)
         let iso_entry_clone = iso_entry.clone();
@@ -106,11 +113,12 @@ pub fn run_gui() {
             }
         });
 
-        // Write button (call cli_helper via pkexec for detection + write)
+        // Write button (call cli_helper via pkexec for detection + write, with real-time feedback)
         let log_view_clone = log_view.clone();
         let iso_entry_clone = iso_entry.clone();
         let device_combo_clone = device_combo.clone();
         let os_label_clone = os_label.clone();
+        let progress_bar_clone = progress_bar.clone();
         write_button.connect_clicked(move |_| {
             let buffer = log_view_clone.buffer();
             let iso_path = iso_entry_clone.text();
@@ -121,33 +129,99 @@ pub fn run_gui() {
                 return;
             }
             buffer.set_text("Requesting elevated permissions and writing to USB...\n");
-            // Use the absolute path to cli_helper
-            let cli_helper_path = "./target/debug/cli_helper";
-            use std::process::Command;
-            let output = Command::new("pkexec")
-                .arg(cli_helper_path)
-                .arg(&iso_path)
-                .arg(usb_device)
-                .output();
-            match output {
-                Ok(out) => {
-                    let stdout = String::from_utf8_lossy(&out.stdout);
-                    let stderr = String::from_utf8_lossy(&out.stderr);
-                    buffer.set_text(&format!("{}{}", stdout, stderr));
-                    if stdout.contains("Windows ISO") {
-                        os_label_clone.set_text("Detected: Windows ISO");
-                    } else if stdout.contains("Linux ISO") {
-                        os_label_clone.set_text("Detected: Linux ISO");
+            progress_bar_clone.set_fraction(0.0);
+            progress_bar_clone.set_show_text(false);
+            progress_bar_clone.set_pulse_step(0.1);
+            progress_bar_clone.set_visible(true);
+
+            // --- Animate the progress bar in the main thread ---
+            let (pulse_stop_tx, pulse_stop_rx) = std::sync::mpsc::channel();
+            {
+                let progress_bar_anim = progress_bar_clone.clone();
+                gtk4::glib::timeout_add_local(std::time::Duration::from_millis(100), clone!(@weak progress_bar_anim => @default-return ControlFlow::Break, move || {
+                    if pulse_stop_rx.try_recv().is_ok() {
+                        return ControlFlow::Break;
                     }
-                },
-                Err(e) => {
-                    buffer.set_text(&format!("Failed to launch helper: {}", e));
-                }
+                    progress_bar_anim.pulse();
+                    ControlFlow::Continue
+                }));
             }
+
+            // --- Use a channel to communicate between thread and main ---
+            let (sender, receiver) = std::sync::mpsc::channel::<Result<String, String>>();
+            let iso_path = iso_path.clone();
+            let usb_device = usb_device.to_string();
+            let pulse_stop_tx2 = pulse_stop_tx.clone();
+            std::thread::spawn(move || {
+                use std::process::{Command, Stdio};
+                use std::io::{BufRead, BufReader};
+                let cli_helper_path = "./target/debug/cli_helper";
+                let mut child = match Command::new("pkexec")
+                    .arg(cli_helper_path)
+                    .arg(&iso_path)
+                    .arg(&usb_device)
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped())
+                    .spawn() {
+                        Ok(child) => child,
+                        Err(e) => {
+                            let _ = sender.send(Err(format!("Failed to launch helper: {}", e)));
+                            let _ = pulse_stop_tx2.send(());
+                            return;
+                        }
+                    };
+                let stdout = child.stdout.take().unwrap();
+                let stderr = child.stderr.take().unwrap();
+                let reader = BufReader::new(stdout);
+                let err_reader = BufReader::new(stderr);
+                // Read stdout in real time
+                for line in reader.lines() {
+                    let line = line.unwrap_or_default();
+                    let _ = sender.send(Ok(line));
+                }
+                // Read stderr in real time
+                for line in err_reader.lines() {
+                    let line = line.unwrap_or_default();
+                    let _ = sender.send(Ok(line));
+                }
+                let _ = child.wait();
+                let _ = sender.send(Ok("__PROCESS_DONE__".to_string()));
+                let _ = pulse_stop_tx2.send(()); // Stop the progress bar pulsing
+            });
+
+            // --- Main thread: update GTK widgets safely ---
+            let buffer_clone = buffer.clone();
+            let os_label_clone2 = os_label_clone.clone();
+            let progress_bar_clone2 = progress_bar_clone.clone();
+            gtk4::glib::idle_add_local(move || {
+                while let Ok(msg) = receiver.try_recv() {
+                    match msg {
+                        Ok(line) => {
+                            if line == "__PROCESS_DONE__" {
+                                progress_bar_clone2.set_visible(false);
+                                return glib::ControlFlow::Break;
+                            }
+                            let mut end_iter = buffer_clone.end_iter();
+                            buffer_clone.insert(&mut end_iter, &format!("{}\n", line));
+                            if line.contains("Windows ISO") {
+                                os_label_clone2.set_text("Detected: Windows ISO");
+                            } else if line.contains("Linux ISO") {
+                                os_label_clone2.set_text("Detected: Linux ISO");
+                            }
+                        }
+                        Err(err) => {
+                            buffer_clone.set_text(&err);
+                            progress_bar_clone2.set_visible(false);
+                            return glib::ControlFlow::Break;
+                        }
+                    }
+                }
+                glib::ControlFlow::Continue
+            });
         });
 
         window.set_child(Some(&vbox));
-        window.show();
+        window.present();
     });
 
     app.run();
