@@ -2,6 +2,8 @@
 name = "rust-usb-bootable-creator"
 version = "0.1.0"
 edition = "2024"
+authors = ["Vic RH <blitzkriegfc@gmail.com>"]
+license = "MIT"
 
 [dependencies]
 anyhow = "1.0"
