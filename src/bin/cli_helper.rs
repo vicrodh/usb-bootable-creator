@@ -3,6 +3,7 @@ use rust_usb_bootable_creator::flows::windows_flow;
 use rust_usb_bootable_creator::flows::linux_flow;
 
 use std::env;
+use std::io::{self, Write};
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -22,26 +23,25 @@ fn main() {
         });
     if is_win {
         println!("Detected: Windows ISO");
-        let mut log_buf = Vec::new();
-        let result = windows_flow::write_windows_iso_to_usb(
-            iso_path, usb_device, false, &mut log_buf
+        io::stdout().flush().ok();
+        let result = windows_flow::write_windows_iso_to_usb_stream(
+            iso_path, usb_device
         );
-        print!("{}", String::from_utf8_lossy(&log_buf));
         if let Err(e) = result {
             eprintln!("Failed to write ISO: {}", e);
             std::process::exit(1);
         }
     } else {
         println!("Detected: Linux ISO");
-        let mut log_buf = Vec::new();
-        let result = linux_flow::write_iso_to_usb(
-            iso_path, usb_device, &mut log_buf
+        io::stdout().flush().ok();
+        let result = linux_flow::write_iso_to_usb_stream(
+            iso_path, usb_device
         );
-        print!("{}", String::from_utf8_lossy(&log_buf));
         if let Err(e) = result {
             eprintln!("Failed to write ISO: {}", e);
             std::process::exit(1);
         }
     }
     println!("Done!");
+    io::stdout().flush().ok();
 }
