@@ -74,6 +74,8 @@ jobs:
 
       - name: Build Flatpak package
         run: |
+          sudo apt install -y cargo
+          wich cargo
           flatpak-builder --force-clean dist/flatpak majusb-bootable-creator.flatpak.yml
 
       - name: Archive PKGBUILD and sources
