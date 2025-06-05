@@ -63,6 +63,11 @@ jobs:
       #     cargo rpm build
       #     find target/release/rpmbuild/RPMS/ -name '*.rpm' -exec cp {} dist/ \;
 
+      - name: Install Flatpak SDK
+        run: |
+          sudo flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          sudo flatpak install -y flathub org.freedesktop.Sdk//23.08 org.freedesktop.Platform//23.08 org.freedesktop.Sdk.Extension.rust-stable//23.08
+
       - name: Build Flatpak package
         run: |
           flatpak-builder --force-clean dist/flatpak majusb-bootable-creator.flatpak.yml
@@ -85,7 +90,6 @@ jobs:
         with:
           files: |
             dist/*.deb
-            dist/*.rpm
             dist/*.tar.gz
             dist/flatpak/*
             dist/PKGBUILD
