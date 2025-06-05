@@ -13,11 +13,12 @@ jobs:
       matrix:
         target:
           - x86_64-unknown-linux-gnu
+
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Rust
+      - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -25,18 +26,23 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt update
-          sudo apt install -y build-essential libgtk-4-dev libglib2.0-dev libudev-dev pkg-config zlib1g-dev libssl-dev libparted-dev dosfstools ntfs-3g parted rsync policykit-1 flatpak-builder rpm
+          sudo apt install -y \
+            build-essential libgtk-4-dev libglib2.0-dev libudev-dev \
+            pkg-config zlib1g-dev libssl-dev libparted-dev \
+            dosfstools ntfs-3g parted rsync policykit-1 \
+            flatpak-builder rpm
 
       - name: Build release binaries
-        run: cargo build --release
+        run: |
+          cargo build --release --target ${{ matrix.target }}
 
       - name: Prepare assets for packaging
         run: |
           mkdir -p dist/icons
           cp assets/icons/icon-128x128.png dist/icons/majusb-bootable-creator.png
           cp majusb-bootable-creator.desktop dist/
-          cp target/release/rust-usb-bootable-creator dist/
-          cp target/release/cli_helper dist/
+          cp target/${{ matrix.target }}/release/rust-usb-bootable-creator dist/
+          cp target/${{ matrix.target }}/release/cli_helper dist/
 
       - name: Build .deb package
         run: |
@@ -47,16 +53,17 @@ jobs:
       - name: Build .rpm package
         run: |
           cargo install cargo-rpm
-          cargo rpm build --no-build --target ${{ matrix.target }}
+          cargo rpm build --no-build
           find target/release/rpmbuild/RPMS/ -name '*.rpm' -exec cp {} dist/ \;
 
-      - name: Build Flatpak
+      - name: Build Flatpak package
         run: |
           flatpak-builder --force-clean dist/flatpak majusb-bootable-creator.flatpak.yml
 
-      - name: Archive PKGBUILD and source
+      - name: Archive PKGBUILD and sources
         run: |
-          tar czf dist/majusb-bootable-creator-$(grep '^version' Cargo.toml | head -1 | cut -d'=' -f2 | tr -d ' "').tar.gz --exclude=target --exclude=dist --exclude=.git .
+          tar czf dist/majusb-bootable-creator-$(grep '^version' Cargo.toml | head -1 | cut -d'=' -f2 | tr -d ' "').tar.gz \
+            --exclude=target --exclude=dist --exclude=.git .
           cp PKGBUILD dist/
 
       - name: Upload Artifacts
@@ -65,7 +72,7 @@ jobs:
           name: majusb-bootable-creator-binaries
           path: dist/
 
-      - name: Release
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/v')
         with:
