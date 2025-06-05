@@ -46,7 +46,7 @@ sudo pacman -S --needed base-devel rustup gtk4 glib2 gio util-linux coreutils do
 
 ```sh
 sudo apt update
-sudo apt install -y build-essential rustup libgtk-4-dev libglib2.0-dev libgio2.0-dev util-linux coreutils dosfstools ntfs-3g parted rsync policykit-1
+sudo apt install -y build-essential rustup libgtk-4-dev libglib2.0-dev util-linux coreutils dosfstools ntfs-3g parted rsync policykit-1
 ```
 </details>
 
@@ -55,7 +55,7 @@ sudo apt install -y build-essential rustup libgtk-4-dev libglib2.0-dev libgio2.0
 
 ```sh
 sudo apt update
-sudo apt install -y build-essential rustup libgtk-4-dev libglib2.0-dev libgio2.0-dev util-linux coreutils dosfstools ntfs-3g parted rsync policykit-1
+sudo apt install -y build-essential rustup libgtk-4-dev libglib2.0-dev util-linux coreutils dosfstools ntfs-3g parted rsync policykit-1
 ```
 </details>
 

@@ -319,7 +319,11 @@ pub fn run_gui() {
                         std::thread::spawn(move || {
                             use std::process::{Command, Stdio};
                             use std::io::{BufRead, BufReader};
-                            let cli_helper_path = "./target/debug/cli_helper";
+                            let cli_helper_path = if cfg!(debug_assertions) {
+                                "./target/debug/cli_helper"
+                            } else {
+                                "./target/release/cli_helper"
+                            };
                             let mut child = match Command::new("pkexec")
                                 .arg(cli_helper_path)
                                 .arg(&iso_path2)
