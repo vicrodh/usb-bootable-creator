@@ -28,33 +28,31 @@ assets = [
     ["majusb-bootable-creator.desktop", "usr/share/applications/majusb-bootable-creator.desktop", "644"]
 ]
 
-[package.metadata.rpm]
-package = "majusb-bootable-creator"
-license = "MIT"
-summary = "A modern, cross-platform USB bootable drive creator with a GTK4 GUI"
-description = """
-MajUSB is a GTK4-based graphical tool to create bootable USB drives for Linux and Windows distributions.
-It supports UEFI/GPT layouts and includes CLI utilities for automation.
-"""
-requires = [
-    "gtk4",
-    "glib2.0",
-    "udev",
-    "parted",
-    "rsync",
-    "dosfstools",
-    "ntfs-3g",
-    "policykit-1"
-]
-assets = [
-    ["target/release/rust-usb-bootable-creator", "/usr/bin/rust-usb-bootable-creator", "755"],
-    ["target/release/cli_helper", "/usr/bin/cli_helper", "755"],
-    ["assets/icons/icon-128x128.png", "/usr/share/icons/hicolor/128x128/apps/majusb-bootable-creator.png", "644"],
-    ["majusb-bootable-creator.desktop", "/usr/share/applications/majusb-bootable-creator.desktop", "644"]
-]
-
-[package.metadata.rpm.targets.x86_64-unknown-linux-gnu]
+# [package.metadata.rpm]
+# package = "majusb-bootable-creator"
+# license = "MIT"
+# summary = "A modern, cross-platform USB bootable drive creator with a GTK4 GUI"
+# description = """
+# MajUSB is a GTK4-based graphical tool to create bootable USB drives for Linux and Windows distributions.
+# It supports UEFI/GPT layouts and includes CLI utilities for automation.
+# """
+# requires = [
+#     "gtk4",
+#     "glib2.0",
+#     "udev",
+#     "parted",
+#     "rsync",
+#     "dosfstools",
+#     "ntfs-3g",
+#     "policykit-1"
+# ]
+# assets = [
+#     ["target/release/rust-usb-bootable-creator", "/usr/bin/rust-usb-bootable-creator", "755"],
+#     ["target/release/cli_helper", "/usr/bin/cli_helper", "755"],
+#     ["assets/icons/icon-128x128.png", "/usr/share/icons/hicolor/128x128/apps/majusb-bootable-creator.png", "644"],
+#     ["majusb-bootable-creator.desktop", "/usr/share/applications/majusb-bootable-creator.desktop", "644"]
+# ]
+# [package.metadata.rpm.targets.x86_64-unknown-linux-gnu]
 # This section is required by cargo-rpm >=0.8.0 for cross-target builds
 # (see: https://github.com/rustyrussell/cargo-rpm/issues/132)
-
 # You can add per-target overrides here if needed, or leave it empty for default behavior
