@@ -21,3 +21,4 @@ modules:
     sources:
       - type: git
         url: https://github.com/vicrodh/usb-bootable-creator.git
+        branch: main
