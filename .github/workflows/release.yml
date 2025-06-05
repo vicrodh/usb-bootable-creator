@@ -73,8 +73,10 @@ jobs:
           sudo apt install -y cargo
 
       - name: Build Flatpak package
+        env:
+          PATH: /home/runner/.cargo/bin:/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin
         run: |
-          sudo apt install -y cargo && flatpak-builder --force-clean dist/flatpak majusb-bootable-creator.flatpak.yml
+          flatpak-builder --force-clean dist/flatpak majusb-bootable-creator.flatpak.yml
 
       - name: Archive PKGBUILD and sources
         run: |
