@@ -68,13 +68,11 @@ jobs:
           sudo flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
           sudo flatpak install -y flathub org.freedesktop.Sdk//23.08 org.freedesktop.Platform//23.08 org.freedesktop.Sdk.Extension.rust-stable//23.08
 
-      - name: Install Cargo in Flatpak build env
-        run: |
-          sudo apt install -y cargo
+      # - name: Install Cargo in Flatpak build env
+      #   run: |
+      #     sudo apt install -y cargo
 
       - name: Build Flatpak package
-        env:
-          PATH: /home/runner/.cargo/bin:/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin
         run: |
           flatpak-builder --force-clean dist/flatpak majusb-bootable-creator.flatpak.yml
 
