@@ -15,7 +15,6 @@ modules:
   - name: majusb-bootable-creator
     buildsystem: simple
     build-commands:
-      - . /usr/lib/sdk/rust-stable/activate
       - cargo build --release
       - install -Dm755 target/release/rust-usb-bootable-creator /app/bin/rust-usb-bootable-creator
       - install -Dm755 target/release/cli_helper /app/bin/cli_helper
