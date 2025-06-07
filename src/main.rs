@@ -2,6 +2,8 @@ mod flows;
 mod gui;
 mod utils;
 
+use gui::run_gui;
+
 fn main() {
-    gui::run_gui();
+    run_gui();
 }
