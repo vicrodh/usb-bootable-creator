@@ -19,7 +19,27 @@ pub fn ensure_root() {
     if !is_root() {
         let exe = std::env::current_exe().unwrap();
         let args: Vec<String> = std::env::args().skip(1).collect();
-        let mut cmd = Command::new("pkexec");
+
+        // Propaga variables de entorno gráficas
+        let display = std::env::var("DISPLAY").unwrap_or_default();
+        let wayland = std::env::var("WAYLAND_DISPLAY").unwrap_or_default();
+        let xauth = std::env::var("XAUTHORITY").unwrap_or_default();
+        let xdg_runtime = std::env::var("XDG_RUNTIME_DIR").unwrap_or_default();
+
+        let mut cmd = std::process::Command::new("pkexec");
+        cmd.arg("env");
+        if !display.is_empty() {
+            cmd.arg(format!("DISPLAY={}", display));
+        }
+        if !wayland.is_empty() {
+            cmd.arg(format!("WAYLAND_DISPLAY={}", wayland));
+        }
+        if !xauth.is_empty() {
+            cmd.arg(format!("XAUTHORITY={}", xauth));
+        }
+        if !xdg_runtime.is_empty() {
+            cmd.arg(format!("XDG_RUNTIME_DIR={}", xdg_runtime));
+        }
         cmd.arg(exe);
         for arg in args {
             cmd.arg(arg);
@@ -60,9 +80,10 @@ pub fn list_usb_devices() -> Vec<(String, String)> {
 pub fn is_windows_iso(iso_path: &str) -> Option<bool> {
     use std::thread::sleep;
     use std::time::Duration;
-    use std::io::{BufRead, BufReader};
+    use std::fs;
+    use std::path::Path;
 
-    // Use udisksctl to mount as user
+    // Use udisksctl to mount as user/root
     let mount_output = Command::new("udisksctl")
         .arg("loop-setup")
         .arg("-f")
@@ -79,11 +100,9 @@ pub fn is_windows_iso(iso_path: &str) -> Option<bool> {
 
     // Mount the loop device
     let mount_dir = tempfile::tempdir().ok()?;
-    let mount_path = mount_dir.path();
-    let mount_status = Command::new("udisksctl")
-        .arg("mount")
-        .arg("-b")
+    let mount_status = Command::new("mount")
         .arg(dev_path)
+        .arg(mount_dir.path())
         .output()
         .ok()?;
     if !mount_status.status.success() {
@@ -91,69 +110,34 @@ pub fn is_windows_iso(iso_path: &str) -> Option<bool> {
         let _ = Command::new("udisksctl").arg("loop-delete").arg("-b").arg(dev_path).status();
         return None;
     }
-    // Parse mount point from output: "Mounted /dev/loopX at /run/media/$USER/xxxx."
-    let stdout = String::from_utf8_lossy(&mount_status.stdout);
-    let mount_line = stdout.lines().find(|l| l.contains(" at "))?;
-    let mount_point = mount_line.split(" at ").nth(1)?.trim_end_matches('.');
-
-    // Small delay to allow mount to complete
     sleep(Duration::from_millis(200));
+    let mount_point = mount_dir.path();
 
     // Check for Windows files
-    let bootmgr = Path::new(mount_point).join("bootmgr");
-    let sources = Path::new(mount_point).join("sources");
-    let is_win = bootmgr.is_file() && sources.is_dir();
+    let bootmgr = mount_point.join("bootmgr");
+    let sources = mount_point.join("sources");
+    if bootmgr.is_file() && sources.is_dir() {
+        // Unmount and clean up
+        let _ = Command::new("umount").arg(mount_point).status();
+        let _ = Command::new("udisksctl").arg("loop-delete").arg("-b").arg(dev_path).status();
+        return Some(true); // Windows ISO
+    }
+
+    // Check for Linux markers (must match at least one directory or file)
+    let linux_markers = [
+        "boot", "casper", "syslinux", "isolinux", "EFI", "live", "kernel", "initrd", "vmlinuz", "arch", "loader", "install", "preseed", "dists", "pool", ".disk", "filesystem.squashfs"
+    ];
+    let found_linux = linux_markers.iter().any(|m| mount_point.join(m).exists());
 
     // Unmount and clean up
-    let _ = Command::new("udisksctl").arg("unmount").arg("-b").arg(dev_path).status();
+    let _ = Command::new("umount").arg(mount_point).status();
     let _ = Command::new("udisksctl").arg("loop-delete").arg("-b").arg(dev_path).status();
-    // mount_dir will be cleaned up automatically
 
-    Some(is_win)
-}
-
-/// Detect if the ISO is a Windows installer by mounting and checking for Windows-specific files, using root privileges (pkexec mount).
-/// Returns Some(true) if Windows ISO, Some(false) if Linux ISO, None if detection failed.
-pub fn is_windows_iso_with_elevation(iso_path: &str) -> Option<bool> {
-    use std::thread::sleep;
-    use std::time::Duration;
-    use std::fs;
-    use std::path::Path;
-    use std::process::Command;
-
-    let mountpt = "/tmp/iso_detect_root";
-    let _ = fs::create_dir_all(mountpt);
-    let mount_result = Command::new("pkexec")
-        .arg("mount")
-        .arg("-o")
-        .arg("loop,ro")
-        .arg(iso_path)
-        .arg(mountpt)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status();
-    sleep(Duration::from_millis(200));
-    let result = match mount_result {
-        Ok(status) if status.success() => {
-            let bootmgr = Path::new(mountpt).join("bootmgr");
-            let sources = Path::new(mountpt).join("sources");
-            let is_win = bootmgr.is_file() && sources.is_dir();
-            let _ = Command::new("pkexec").arg("umount").arg(mountpt).status();
-            let _ = fs::remove_dir(mountpt);
-            Some(is_win)
-        }
-        Ok(_) => {
-            let _ = Command::new("pkexec").arg("umount").arg(mountpt).status();
-            let _ = fs::remove_dir(mountpt);
-            None
-        }
-        Err(_) => {
-            let _ = Command::new("pkexec").arg("umount").arg(mountpt).status();
-            let _ = fs::remove_dir(mountpt);
-            None
-        }
-    };
-    result
+    if found_linux {
+        Some(false) // Linux ISO
+    } else {
+        None // Unknown or not a bootable ISO
+    }
 }
 
 /// Utility: Check for required system packages

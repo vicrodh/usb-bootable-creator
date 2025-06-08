@@ -6,9 +6,7 @@ use tempfile::tempdir_in;
 
 /// Write the ISO file to the USB device using dd (requires root)
 pub fn write_iso_to_usb(iso_path: &str, usb_device: &str, log: &mut dyn Write) -> io::Result<()> {
-    // Use pkexec to run dd as root, not the whole app
-    let status = Command::new("pkexec")
-        .arg("dd")
+    let status = Command::new("dd")
         .arg(format!("if={}", iso_path))
         .arg(format!("of={}", usb_device))
         .arg("bs=4M")
@@ -42,8 +40,7 @@ pub fn write_iso_to_usb_stream(iso_path: &str, usb_device: &str, cluster_bytes: 
     let total_steps = 5;
     let mut step = 1;
     print_step(step, total_steps, "Wiping old partition table (wipefs)...");
-    let status = Command::new("pkexec")
-        .arg("wipefs")
+    let status = Command::new("wipefs")
         .arg("-a")
         .arg(usb_device)
         .status()?;
@@ -57,8 +54,7 @@ pub fn write_iso_to_usb_stream(iso_path: &str, usb_device: &str, cluster_bytes: 
     print_step(step, total_steps, &format!("Writing ISO to USB with dd (this may take a while)..."));
     use std::process::{Command, Stdio};
     use std::io::{BufRead, BufReader, Write};
-    let mut child = Command::new("pkexec")
-        .arg("dd")
+    let mut child = Command::new("dd")
         .arg(format!("if={}", iso_path))
         .arg(format!("of={}", usb_device))
         .arg(format!("bs={}", cluster_bytes))

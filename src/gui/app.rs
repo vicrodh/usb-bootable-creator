@@ -133,10 +133,19 @@ pub fn run_gui() {
             // --- Windows form group (hidden by default) ---
             let windows_group = GtkBox::new(Orientation::Vertical, 8);
             windows_group.set_visible(false);
-            let windows_title = Label::new(Some("Advanced options (Windows)"));
-            windows_title.set_halign(gtk4::Align::Start);
-            windows_title.set_margin_bottom(2);
-            windows_group.append(&windows_title);
+            // Advanced options title as a horizontal bar
+            let windows_title_bar = GtkBox::new(Orientation::Horizontal, 4);
+            let left_sep = gtk4::Separator::new(Orientation::Horizontal);
+            left_sep.set_hexpand(true);
+            let adv_label = Label::new(Some("Advanced options"));
+            adv_label.set_halign(gtk4::Align::Center);
+            adv_label.set_markup("<b>Advanced options</b>");
+            let right_sep = gtk4::Separator::new(Orientation::Horizontal);
+            right_sep.set_hexpand(true);
+            windows_title_bar.append(&left_sep);
+            windows_title_bar.append(&adv_label);
+            windows_title_bar.append(&right_sep);
+            windows_group.append(&windows_title_bar);
             let cluster_label = Label::new(Some("Cluster Size:"));
             let cluster_sizes = vec![
                 ("512 bytes", 512),
@@ -160,22 +169,35 @@ pub fn run_gui() {
             // --- Linux form group (hidden by default) ---
             let linux_group = GtkBox::new(Orientation::Vertical, 8);
             linux_group.set_visible(false);
-            let linux_title = Label::new(Some("Advanced options (Linux)"));
-            linux_title.set_halign(gtk4::Align::Start);
-            linux_title.set_margin_bottom(2);
-            linux_group.append(&linux_title);
+            // Advanced options title as a horizontal bar (reuse for Linux)
+            let linux_title_bar = GtkBox::new(Orientation::Horizontal, 4);
+            let left_sep2 = gtk4::Separator::new(Orientation::Horizontal);
+            left_sep2.set_hexpand(true);
+            let adv_label2 = Label::new(Some("Advanced options"));
+            adv_label2.set_halign(gtk4::Align::Center);
+            adv_label2.set_markup("<b>Advanced options</b>");
+            let right_sep2 = gtk4::Separator::new(Orientation::Horizontal);
+            right_sep2.set_hexpand(true);
+            linux_title_bar.append(&left_sep2);
+            linux_title_bar.append(&adv_label2);
+            linux_title_bar.append(&right_sep2);
+            linux_group.append(&linux_title_bar);
             let persistence_checkbox = gtk4::CheckButton::with_label("Add persistence");
             persistence_checkbox.set_active(false);
             linux_group.append(&persistence_checkbox);
             vbox.append(&linux_group);
 
-            // Write and Advanced options buttons (side by side)
+            // Write and Advanced options buttons (side by side, centered)
             let button_hbox = GtkBox::new(Orientation::Horizontal, 8);
+            button_hbox.set_halign(gtk4::Align::Center);
             let write_button = Button::with_label("Write to USB");
             let advanced_button = Button::with_label("Advanced options");
             button_hbox.append(&write_button);
             button_hbox.append(&advanced_button);
             vbox.append(&button_hbox);
+
+            // Move OS label below the buttons
+            vbox.append(&os_label);
 
             // Log area
             let log_label = Label::new(Some("Log:"));
@@ -205,112 +227,152 @@ pub fn run_gui() {
             progress_bar.set_fraction(0.0);
             vbox.append(&progress_bar);
 
-            // --- Advanced options logic ---
-            let iso_entry_clone = iso_entry.clone();
-            let os_label_for_adv = os_label.clone();
-            let windows_group_adv = windows_group.clone();
-            let linux_group_adv = linux_group.clone();
-            // Use a flag to prevent double elevation per click
-            let is_elevating = std::rc::Rc::new(std::cell::Cell::new(false));
-            advanced_button.connect_clicked({
-                let is_elevating = is_elevating.clone();
-                move |_| {
+            // --- Advanced options logic with toggle (refactored, reusable reset) ---
+            let adv_open = std::rc::Rc::new(std::cell::Cell::new(false));
+            let advanced_button_ref = std::rc::Rc::new(advanced_button.clone());
+            // Extract reusable reset/close logic for advanced options
+            let reset_advanced_options = {
+                let windows_group = windows_group.clone();
+                let linux_group = linux_group.clone();
+                let cluster_combo = cluster_combo.clone();
+                let persistence_checkbox = persistence_checkbox.clone();
+                let os_label = os_label.clone();
+                let advanced_button_ref = advanced_button_ref.clone();
+                let adv_open = adv_open.clone();
+                move || {
+                    windows_group.set_visible(false);
+                    linux_group.set_visible(false);
+                    cluster_combo.set_active(Some(3));
+                    persistence_checkbox.set_active(false);
+                    os_label.set_text("");
+                    advanced_button_ref.set_label("Advanced options");
+                    adv_open.set(false);
+                }
+            };
+
+            // --- Advanced options button handler ---
+            {
+                let is_elevating = std::rc::Rc::new(std::cell::Cell::new(false));
+                let adv_open = adv_open.clone();
+                let advanced_button_ref = advanced_button_ref.clone();
+                let iso_entry = iso_entry.clone();
+                let os_label = os_label.clone();
+                let windows_group = windows_group.clone();
+                let linux_group = linux_group.clone();
+                let cluster_combo = cluster_combo.clone();
+                let persistence_checkbox = persistence_checkbox.clone();
+                let reset_advanced_options = reset_advanced_options.clone();
+                // Global elevation counter
+                static ELEVATION_COUNT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+                advanced_button.connect_clicked(move |_| {
+                    println!("[DEBUG] [{}:{}] Advanced options button clicked. adv_open={}, is_elevating={}", file!(), line!(), adv_open.get(), is_elevating.get());
+                    if adv_open.get() {
+                        println!("[DEBUG] [{}:{}] Closing advanced options.", file!(), line!());
+                        reset_advanced_options();
+                        return;
+                    }
                     if is_elevating.get() {
-                        // Already elevating, ignore further clicks
+                        println!("[DEBUG] [{}:{}] Elevation already in progress, ignoring click.", file!(), line!());
                         return;
                     }
-                    let iso_path = iso_entry_clone.text();
+                    let iso_path = iso_entry.text();
                     if iso_path.is_empty() {
-                        os_label_for_adv.set_text("Please select an ISO first.");
+                        println!("[DEBUG] [{}:{}] No ISO selected, cannot detect OS.", file!(), line!());
+                        os_label.set_text("Please select an ISO first.");
                         return;
                     }
-                    // Try user-mount detection first
+                    println!("[DEBUG] [{}:{}] Attempting user-mount OS detection...", file!(), line!());
                     let detected = crate::utils::is_windows_iso(&iso_path);
                     match detected {
                         Some(true) => {
-                            os_label_for_adv.set_text("Detected: Windows ISO (mounted)");
-                            windows_group_adv.set_visible(true);
-                            linux_group_adv.set_visible(false);
+                            println!("[DEBUG] [{}:{}] Detected Windows ISO (user-mount)", file!(), line!());
+                            os_label.set_text("Detected: Windows ISO (mounted)");
+                            windows_group.set_visible(true);
+                            linux_group.set_visible(false);
+                            advanced_button_ref.set_label("Close advanced options");
+                            adv_open.set(true);
                         },
                         Some(false) => {
-                            os_label_for_adv.set_text("Detected: Linux ISO (mounted)");
-                            windows_group_adv.set_visible(false);
-                            linux_group_adv.set_visible(true);
+                            println!("[DEBUG] [{}:{}] Detected Linux ISO (user-mount)", file!(), line!());
+                            os_label.set_text("Detected: Linux ISO (mounted)");
+                            windows_group.set_visible(false);
+                            linux_group.set_visible(true);
+                            advanced_button_ref.set_label("Close advanced options");
+                            adv_open.set(true);
                         },
                         None => {
-                            // Only allow one elevation attempt per click
+                            println!("[DEBUG] [{}:{}] User-mount detection failed, requesting elevation...", file!(), line!());
                             is_elevating.set(true);
-                            let result = crate::utils::is_windows_iso_with_elevation(&iso_path);
+                            let prev = ELEVATION_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+                            println!("[DEBUG] [{}:{}] is_elevating set to true, calling is_windows_iso... (ELEVATION_COUNT={})", file!(), line!(), prev);
+                            let result = crate::utils::is_windows_iso(&iso_path);
+                            println!("[DEBUG] [{}:{}] is_windows_iso returned: {:?}", file!(), line!(), result);
                             match result {
                                 Some(true) => {
-                                    os_label_for_adv.set_text("Detected: Windows ISO (root mount)");
-                                    windows_group_adv.set_visible(true);
-                                    linux_group_adv.set_visible(false);
+                                    println!("[DEBUG] [{}:{}] Detected Windows ISO (root mount)", file!(), line!());
+                                    os_label.set_text("Detected: Windows ISO (root mount)");
+                                    windows_group.set_visible(true);
+                                    linux_group.set_visible(false);
+                                    advanced_button_ref.set_label("Close advanced options");
+                                    adv_open.set(true);
                                 },
                                 Some(false) => {
-                                    os_label_for_adv.set_text("Detected: Linux ISO (root mount)");
-                                    windows_group_adv.set_visible(false);
-                                    linux_group_adv.set_visible(true);
+                                    println!("[DEBUG] [{}:{}] Detected Linux ISO (root mount)", file!(), line!());
+                                    os_label.set_text("Detected: Linux ISO (root mount)");
+                                    windows_group.set_visible(false);
+                                    linux_group.set_visible(true);
+                                    advanced_button_ref.set_label("Close advanced options");
+                                    adv_open.set(true);
                                 },
                                 None => {
-                                    os_label_for_adv.set_text("Could not detect OS type (even with root)");
-                                    windows_group_adv.set_visible(false);
-                                    linux_group_adv.set_visible(false);
+                                    println!("[DEBUG] [{}:{}] Could not detect OS type even with root", file!(), line!());
+                                    os_label.set_text("Could not detect OS type (even with root)");
+                                    reset_advanced_options();
                                 },
                             }
                             is_elevating.set(false);
+                            println!("[DEBUG] [{}:{}] is_elevating set to false after elevation attempt", file!(), line!());
                         }
                     }
-                }
-            });
+                });
+            }
 
             // --- ISO selection event handler (reset form groups, no auto-detect, no double picker) ---
-            let iso_entry_clone = iso_entry.clone();
-            let os_label_for_iso = os_label.clone();
-            let windows_group_iso = windows_group.clone();
-            let linux_group_iso = linux_group.clone();
-            let cluster_combo_iso = cluster_combo.clone();
-            let persistence_checkbox_iso = persistence_checkbox.clone();
-            let window_weak_browse = window_weak.clone();
-            iso_button.connect_clicked(move |_| {
-                if let Some(window) = window_weak_browse.upgrade() {
-                    // TODO: Use system file picker if possible. GTK4 FileChooserDialog is used here for portability.
-                    let dialog = FileChooserDialog::new(
-                        Some("Select ISO Image"),
-                        Some(&window),
-                        FileChooserAction::Open,
-                        &[ ]
-                    );
-                    dialog.add_button("Open", gtk4::ResponseType::Ok);
-                    dialog.add_button("Cancel", gtk4::ResponseType::Cancel);
-                    let filter = FileFilter::new();
-                    filter.add_pattern("*.iso");
-                    filter.set_name(Some("ISO files"));
-                    dialog.add_filter(&filter);
-                    let iso_entry_clone2 = iso_entry_clone.clone();
-                    let os_label_clone2 = os_label_for_iso.clone();
-                    let windows_group_clone2 = windows_group_iso.clone();
-                    let linux_group_clone2 = linux_group_iso.clone();
-                    let cluster_combo_clone2 = cluster_combo_iso.clone();
-                    let persistence_checkbox_clone2 = persistence_checkbox_iso.clone();
-                    dialog.connect_response(move |dialog, resp| {
-                        if resp == gtk4::ResponseType::Ok {
-                            if let Some(file) = dialog.file().and_then(|f| f.path()) {
-                                let path_str = file.to_string_lossy().to_string();
-                                iso_entry_clone2.set_text(&path_str);
-                                // Reset form groups and options, no auto-detect
-                                windows_group_clone2.set_visible(false);
-                                linux_group_clone2.set_visible(false);
-                                cluster_combo_clone2.set_active(Some(3));
-                                persistence_checkbox_clone2.set_active(false);
-                                os_label_clone2.set_text("");
+            {
+                let iso_entry = iso_entry.clone();
+                let window_weak_browse = window_weak.clone();
+                let reset_advanced_options = reset_advanced_options.clone();
+                iso_button.connect_clicked(move |_| {
+                    if let Some(window) = window_weak_browse.upgrade() {
+                        let dialog = FileChooserDialog::new(
+                            Some("Select ISO Image"),
+                            Some(&window),
+                            FileChooserAction::Open,
+                            &[ ]
+                        );
+                        dialog.add_button("Open", gtk4::ResponseType::Ok);
+                        dialog.add_button("Cancel", gtk4::ResponseType::Cancel);
+                        let filter = FileFilter::new();
+                        filter.add_pattern("*.iso");
+                        filter.set_name(Some("ISO files"));
+                        dialog.add_filter(&filter);
+                        let iso_entry_clone2 = iso_entry.clone();
+                        let reset_advanced_options = reset_advanced_options.clone();
+                        dialog.connect_response(move |dialog, resp| {
+                            if resp == gtk4::ResponseType::Ok {
+                                if let Some(file) = dialog.file().and_then(|f| f.path()) {
+                                    let path_str = file.to_string_lossy().to_string();
+                                    iso_entry_clone2.set_text(&path_str);
+                                    // Call the reusable reset logic
+                                    reset_advanced_options();
+                                }
                             }
-                        }
-                        dialog.close();
-                    });
-                    dialog.show();
-                }
-            });
+                            dialog.close();
+                        });
+                        dialog.show();
+                    }
+                });
+            }
 
             // Set the main vbox as the window content
             window.set_child(Some(&vbox));
