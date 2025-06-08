@@ -60,12 +60,71 @@ pub fn list_usb_devices() -> Vec<(String, String)> {
 pub fn is_windows_iso(iso_path: &str) -> Option<bool> {
     use std::thread::sleep;
     use std::time::Duration;
+    use std::io::{BufRead, BufReader};
 
-    let mountpt = "/tmp/iso_detect";
+    // Use udisksctl to mount as user
+    let mount_output = Command::new("udisksctl")
+        .arg("loop-setup")
+        .arg("-f")
+        .arg(iso_path)
+        .output()
+        .ok()?;
+    if !mount_output.status.success() {
+        return None;
+    }
+    // Parse device path from output: "Mapped file ... as /dev/loopX."
+    let stdout = String::from_utf8_lossy(&mount_output.stdout);
+    let dev_line = stdout.lines().find(|l| l.contains("/dev/loop"))?;
+    let dev_path = dev_line.split_whitespace().last()?.trim_end_matches('.');
+
+    // Mount the loop device
+    let mount_dir = tempfile::tempdir().ok()?;
+    let mount_path = mount_dir.path();
+    let mount_status = Command::new("udisksctl")
+        .arg("mount")
+        .arg("-b")
+        .arg(dev_path)
+        .output()
+        .ok()?;
+    if !mount_status.status.success() {
+        // Clean up loop device
+        let _ = Command::new("udisksctl").arg("loop-delete").arg("-b").arg(dev_path).status();
+        return None;
+    }
+    // Parse mount point from output: "Mounted /dev/loopX at /run/media/$USER/xxxx."
+    let stdout = String::from_utf8_lossy(&mount_status.stdout);
+    let mount_line = stdout.lines().find(|l| l.contains(" at "))?;
+    let mount_point = mount_line.split(" at ").nth(1)?.trim_end_matches('.');
+
+    // Small delay to allow mount to complete
+    sleep(Duration::from_millis(200));
+
+    // Check for Windows files
+    let bootmgr = Path::new(mount_point).join("bootmgr");
+    let sources = Path::new(mount_point).join("sources");
+    let is_win = bootmgr.is_file() && sources.is_dir();
+
+    // Unmount and clean up
+    let _ = Command::new("udisksctl").arg("unmount").arg("-b").arg(dev_path).status();
+    let _ = Command::new("udisksctl").arg("loop-delete").arg("-b").arg(dev_path).status();
+    // mount_dir will be cleaned up automatically
+
+    Some(is_win)
+}
+
+/// Detect if the ISO is a Windows installer by mounting and checking for Windows-specific files, using root privileges (pkexec mount).
+/// Returns Some(true) if Windows ISO, Some(false) if Linux ISO, None if detection failed.
+pub fn is_windows_iso_with_elevation(iso_path: &str) -> Option<bool> {
+    use std::thread::sleep;
+    use std::time::Duration;
+    use std::fs;
+    use std::path::Path;
+    use std::process::Command;
+
+    let mountpt = "/tmp/iso_detect_root";
     let _ = fs::create_dir_all(mountpt);
-
-    // Try mounting as user (no pkexec)
-    let mount_result = Command::new("mount")
+    let mount_result = Command::new("pkexec")
+        .arg("mount")
         .arg("-o")
         .arg("loop,ro")
         .arg(iso_path)
@@ -73,33 +132,27 @@ pub fn is_windows_iso(iso_path: &str) -> Option<bool> {
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status();
-
-    // Small delay to allow mount to complete
     sleep(Duration::from_millis(200));
-
     let result = match mount_result {
         Ok(status) if status.success() => {
             let bootmgr = Path::new(mountpt).join("bootmgr");
             let sources = Path::new(mountpt).join("sources");
             let is_win = bootmgr.is_file() && sources.is_dir();
-
-            let _ = Command::new("umount").arg(mountpt).status();
+            let _ = Command::new("pkexec").arg("umount").arg(mountpt).status();
             let _ = fs::remove_dir(mountpt);
             Some(is_win)
         }
-        Ok(_status) => {
-            // Non-successful exit (e.g. permission denied)
-            let _ = Command::new("umount").arg(mountpt).status();
+        Ok(_) => {
+            let _ = Command::new("pkexec").arg("umount").arg(mountpt).status();
             let _ = fs::remove_dir(mountpt);
             None
         }
         Err(_) => {
-            let _ = Command::new("umount").arg(mountpt).status();
+            let _ = Command::new("pkexec").arg("umount").arg(mountpt).status();
             let _ = fs::remove_dir(mountpt);
             None
         }
     };
-
     result
 }
 

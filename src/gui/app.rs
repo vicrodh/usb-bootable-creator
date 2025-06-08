@@ -85,36 +85,9 @@ pub fn run_gui() {
             iso_entry.set_width_chars(40);
             vbox.append(&iso_hbox);
 
-            // --- ISO selection event handler ---
-            let iso_entry_clone = iso_entry.clone();
-            let window_weak_browse = window_weak.clone();
-            iso_button.connect_clicked(move |_| {
-                if let Some(window) = window_weak_browse.upgrade() {
-                    let dialog = FileChooserDialog::new(
-                        Some("Select ISO Image"),
-                        Some(&window),
-                        FileChooserAction::Open,
-                        &[ ] // No buttons initially
-                    );
-                    dialog.add_button("Open", gtk4::ResponseType::Ok);
-                    dialog.add_button("Cancel", gtk4::ResponseType::Cancel);
-                    let filter = FileFilter::new();
-                    filter.add_pattern("*.iso");
-                    filter.set_name(Some("ISO files"));
-                    dialog.add_filter(&filter);
-                    let iso_entry_clone2 = iso_entry_clone.clone();
-                    dialog.connect_response(move |dialog, resp| {
-                        if resp == gtk4::ResponseType::Ok {
-                            if let Some(file) = dialog.file().and_then(|f| f.path()) {
-                                let path_str = file.to_string_lossy().to_string();
-                                iso_entry_clone2.set_text(&path_str);
-                            }
-                        }
-                        dialog.close();
-                    });
-                    dialog.show();
-                }
-            });
+            // --- OS label (for detection) ---
+            let os_label = Label::new(None);
+            vbox.append(&os_label);
 
             // Separator
             let sep1 = gtk4::Separator::new(Orientation::Horizontal);
@@ -122,10 +95,6 @@ pub fn run_gui() {
             sep1.set_hexpand(true);
             sep1.set_width_request((720.0 * 0.8) as i32);
             vbox.append(&sep1);
-
-            // Label to show detected OS type
-            let os_label = Label::new(None);
-            vbox.append(&os_label);
 
             // USB device selection (inline label, increased height)
             let device_hbox = GtkBox::new(Orientation::Horizontal, 8);
@@ -161,7 +130,14 @@ pub fn run_gui() {
             sep2.set_width_request((720.0 * 0.8) as i32);
             vbox.append(&sep2);
 
-            // Cluster size (valid NTFS values only)
+            // --- Windows form group (hidden by default) ---
+            let windows_group = GtkBox::new(Orientation::Vertical, 8);
+            windows_group.set_visible(false);
+            let windows_title = Label::new(Some("Advanced options (Windows)"));
+            windows_title.set_halign(gtk4::Align::Start);
+            windows_title.set_margin_bottom(2);
+            windows_group.append(&windows_title);
+            let cluster_label = Label::new(Some("Cluster Size:"));
             let cluster_sizes = vec![
                 ("512 bytes", 512),
                 ("1K", 1024),
@@ -177,12 +153,29 @@ pub fn run_gui() {
                 cluster_combo.append_text(label);
             }
             cluster_combo.set_active(Some(3)); // Default to 4K (4096 bytes)
-            vbox.append(&Label::new(Some("Cluster Size:")));
-            vbox.append(&cluster_combo);
+            windows_group.append(&cluster_label);
+            windows_group.append(&cluster_combo);
+            vbox.append(&windows_group);
 
-            // Write button
+            // --- Linux form group (hidden by default) ---
+            let linux_group = GtkBox::new(Orientation::Vertical, 8);
+            linux_group.set_visible(false);
+            let linux_title = Label::new(Some("Advanced options (Linux)"));
+            linux_title.set_halign(gtk4::Align::Start);
+            linux_title.set_margin_bottom(2);
+            linux_group.append(&linux_title);
+            let persistence_checkbox = gtk4::CheckButton::with_label("Add persistence");
+            persistence_checkbox.set_active(false);
+            linux_group.append(&persistence_checkbox);
+            vbox.append(&linux_group);
+
+            // Write and Advanced options buttons (side by side)
+            let button_hbox = GtkBox::new(Orientation::Horizontal, 8);
             let write_button = Button::with_label("Write to USB");
-            vbox.append(&write_button);
+            let advanced_button = Button::with_label("Advanced options");
+            button_hbox.append(&write_button);
+            button_hbox.append(&advanced_button);
+            vbox.append(&button_hbox);
 
             // Log area
             let log_label = Label::new(Some("Log:"));
@@ -211,6 +204,113 @@ pub fn run_gui() {
             progress_bar.set_show_text(false);
             progress_bar.set_fraction(0.0);
             vbox.append(&progress_bar);
+
+            // --- Advanced options logic ---
+            let iso_entry_clone = iso_entry.clone();
+            let os_label_for_adv = os_label.clone();
+            let windows_group_adv = windows_group.clone();
+            let linux_group_adv = linux_group.clone();
+            // Use a flag to prevent double elevation per click
+            let is_elevating = std::rc::Rc::new(std::cell::Cell::new(false));
+            advanced_button.connect_clicked({
+                let is_elevating = is_elevating.clone();
+                move |_| {
+                    if is_elevating.get() {
+                        // Already elevating, ignore further clicks
+                        return;
+                    }
+                    let iso_path = iso_entry_clone.text();
+                    if iso_path.is_empty() {
+                        os_label_for_adv.set_text("Please select an ISO first.");
+                        return;
+                    }
+                    // Try user-mount detection first
+                    let detected = crate::utils::is_windows_iso(&iso_path);
+                    match detected {
+                        Some(true) => {
+                            os_label_for_adv.set_text("Detected: Windows ISO (mounted)");
+                            windows_group_adv.set_visible(true);
+                            linux_group_adv.set_visible(false);
+                        },
+                        Some(false) => {
+                            os_label_for_adv.set_text("Detected: Linux ISO (mounted)");
+                            windows_group_adv.set_visible(false);
+                            linux_group_adv.set_visible(true);
+                        },
+                        None => {
+                            // Only allow one elevation attempt per click
+                            is_elevating.set(true);
+                            let result = crate::utils::is_windows_iso_with_elevation(&iso_path);
+                            match result {
+                                Some(true) => {
+                                    os_label_for_adv.set_text("Detected: Windows ISO (root mount)");
+                                    windows_group_adv.set_visible(true);
+                                    linux_group_adv.set_visible(false);
+                                },
+                                Some(false) => {
+                                    os_label_for_adv.set_text("Detected: Linux ISO (root mount)");
+                                    windows_group_adv.set_visible(false);
+                                    linux_group_adv.set_visible(true);
+                                },
+                                None => {
+                                    os_label_for_adv.set_text("Could not detect OS type (even with root)");
+                                    windows_group_adv.set_visible(false);
+                                    linux_group_adv.set_visible(false);
+                                },
+                            }
+                            is_elevating.set(false);
+                        }
+                    }
+                }
+            });
+
+            // --- ISO selection event handler (reset form groups, no auto-detect, no double picker) ---
+            let iso_entry_clone = iso_entry.clone();
+            let os_label_for_iso = os_label.clone();
+            let windows_group_iso = windows_group.clone();
+            let linux_group_iso = linux_group.clone();
+            let cluster_combo_iso = cluster_combo.clone();
+            let persistence_checkbox_iso = persistence_checkbox.clone();
+            let window_weak_browse = window_weak.clone();
+            iso_button.connect_clicked(move |_| {
+                if let Some(window) = window_weak_browse.upgrade() {
+                    // TODO: Use system file picker if possible. GTK4 FileChooserDialog is used here for portability.
+                    let dialog = FileChooserDialog::new(
+                        Some("Select ISO Image"),
+                        Some(&window),
+                        FileChooserAction::Open,
+                        &[ ]
+                    );
+                    dialog.add_button("Open", gtk4::ResponseType::Ok);
+                    dialog.add_button("Cancel", gtk4::ResponseType::Cancel);
+                    let filter = FileFilter::new();
+                    filter.add_pattern("*.iso");
+                    filter.set_name(Some("ISO files"));
+                    dialog.add_filter(&filter);
+                    let iso_entry_clone2 = iso_entry_clone.clone();
+                    let os_label_clone2 = os_label_for_iso.clone();
+                    let windows_group_clone2 = windows_group_iso.clone();
+                    let linux_group_clone2 = linux_group_iso.clone();
+                    let cluster_combo_clone2 = cluster_combo_iso.clone();
+                    let persistence_checkbox_clone2 = persistence_checkbox_iso.clone();
+                    dialog.connect_response(move |dialog, resp| {
+                        if resp == gtk4::ResponseType::Ok {
+                            if let Some(file) = dialog.file().and_then(|f| f.path()) {
+                                let path_str = file.to_string_lossy().to_string();
+                                iso_entry_clone2.set_text(&path_str);
+                                // Reset form groups and options, no auto-detect
+                                windows_group_clone2.set_visible(false);
+                                linux_group_clone2.set_visible(false);
+                                cluster_combo_clone2.set_active(Some(3));
+                                persistence_checkbox_clone2.set_active(false);
+                                os_label_clone2.set_text("");
+                            }
+                        }
+                        dialog.close();
+                    });
+                    dialog.show();
+                }
+            });
 
             // Set the main vbox as the window content
             window.set_child(Some(&vbox));
