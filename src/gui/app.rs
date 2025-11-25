@@ -1,5 +1,6 @@
 use gtk4::prelude::*;
 use gtk4::{Application, ApplicationWindow, Button, ComboBoxText, Entry, FileChooserAction, FileChooserDialog, FileFilter, Orientation, Box as GtkBox, Label, ScrolledWindow, TextView, ProgressBar};
+use glib;
 
 pub fn run_gui() {
     let app = Application::builder()
@@ -371,6 +372,173 @@ pub fn run_gui() {
                         });
                         dialog.show();
                     }
+                });
+            }
+
+            // --- USB device refresh functionality ---
+            {
+                let device_combo = device_combo.clone();
+                refresh_button.connect_clicked(move |_| {
+                    println!("[DEBUG] Refreshing USB device list...");
+                    device_combo.remove_all();
+
+                    let devices = crate::utils::list_usb_devices();
+                    let device_count = devices.len();
+                    if devices.is_empty() {
+                        device_combo.append_text("(No USB devices found)");
+                        device_combo.set_active(Some(0));
+                    } else {
+                        for (path, description) in devices {
+                            device_combo.append_text(&format!("{} - {}", path, description));
+                        }
+                        device_combo.set_active(Some(0));
+                    }
+                    println!("[DEBUG] Found {} USB devices", device_count);
+                });
+            }
+
+            // --- Write button functionality ---
+            {
+                let write_button = write_button.clone();
+                let iso_entry = iso_entry.clone();
+                let device_combo = device_combo.clone();
+                let windows_group = windows_group.clone();
+                let linux_group = linux_group.clone();
+                let cluster_combo = cluster_combo.clone();
+                let persistence_checkbox = persistence_checkbox.clone();
+                let log_view = log_view.clone();
+                let progress_bar = progress_bar.clone();
+                let os_label = os_label.clone();
+
+                write_button.clone().connect_clicked(move |_| {
+                    let iso_path = iso_entry.text().to_string();
+                    if iso_path.is_empty() {
+                        let buffer = log_view.buffer();
+                        buffer.set_text("ERROR: No ISO file selected\n");
+                        return;
+                    }
+
+                    let active_device = device_combo.active_text().unwrap_or_default();
+                    if active_device.is_empty() || active_device.contains("(refresh to list devices)") || active_device.contains("(No USB devices found)") {
+                        let buffer = log_view.buffer();
+                        buffer.set_text("ERROR: No USB device selected or no devices found\n");
+                        return;
+                    }
+
+                    // Extract device path (before " - " separator)
+                    let device_path = active_device.split(" - ").next().unwrap_or("").trim();
+                    let device_path = device_path.to_string(); // Create owned copy
+                    if device_path.is_empty() {
+                        let buffer = log_view.buffer();
+                        buffer.set_text("ERROR: Could not parse device path\n");
+                        return;
+                    }
+
+                    println!("[DEBUG] Starting USB write: ISO={}, Device={}", iso_path, device_path);
+
+                    // Update UI for write operation
+                    write_button.set_sensitive(false);
+                    progress_bar.set_fraction(0.0);
+                    progress_bar.set_show_text(true);
+                    progress_bar.set_text(Some("Starting..."));
+
+                    let buffer = log_view.buffer();
+                    let mut log_text = format!("Starting write operation:\n");
+                    log_text.push_str(&format!("  ISO: {}\n", iso_path));
+                    log_text.push_str(&format!("  Device: {}\n", device_path));
+
+                    // Determine write mode and options
+                    let is_windows_mode = windows_group.is_visible();
+
+                    if is_windows_mode {
+                        let cluster_idx = cluster_combo.active().unwrap_or(3) as usize;
+                        let cluster_sizes = [512, 1024, 2048, 4096, 8192, 16384, 32768, 65536];
+                        let cluster_size = *cluster_sizes.get(cluster_idx).unwrap_or(&4096);
+                        log_text.push_str(&format!("  Mode: Windows (cluster size: {} bytes)\n", cluster_size));
+                    } else if linux_group.is_visible() {
+                        let persistence = persistence_checkbox.is_active();
+                        log_text.push_str(&format!("  Mode: Linux (persistence: {})\n", if persistence { "enabled" } else { "disabled" }));
+                    }
+
+                    buffer.set_text(&log_text);
+
+                    // Show confirmation dialog before starting
+                    let dialog = gtk4::MessageDialog::builder()
+                        .text("Confirm USB Write Operation")
+                        .secondary_text(&format!("This will completely erase:\n{}\n\nProceed with write operation?", device_path))
+                        .buttons(gtk4::ButtonsType::OkCancel)
+                        .message_type(gtk4::MessageType::Warning)
+                        .build();
+
+                    let progress_bar_clone = progress_bar.clone();
+                    let write_button_clone = write_button.clone();
+                    let log_view_clone = log_view.clone();
+                    let iso_path_clone = iso_path.clone();
+                    let device_path_clone = device_path.clone();
+
+                    dialog.connect_response(move |dialog, response| {
+                        dialog.close();
+
+                        if response != gtk4::ResponseType::Ok {
+                            write_button_clone.set_sensitive(true);
+                            progress_bar_clone.set_fraction(0.0);
+                            progress_bar_clone.set_show_text(false);
+                            return;
+                        }
+
+                        let buffer = log_view_clone.buffer();
+                        let start = buffer.start_iter();
+                        let end = buffer.end_iter();
+                        let mut current_text = buffer.text(&start, &end, false).to_string();
+                        current_text.push_str("\n=== Starting write operation ===\n");
+                        buffer.set_text(&current_text);
+
+                        // Execute write operation (blocking for now - will be improved later)
+                        let result = if is_windows_mode {
+                            println!("[DEBUG] Writing Windows ISO to USB");
+                            current_text.push_str("Starting Windows dual-partition write...\n");
+                            buffer.set_text(&current_text);
+                            crate::flows::windows_flow::write_windows_iso_to_usb(
+                                &iso_path_clone,
+                                &device_path_clone,
+                                false,
+                                &mut std::io::Cursor::new(Vec::new())
+                            )
+                        } else {
+                            println!("[DEBUG] Writing Linux ISO to USB");
+                            current_text.push_str("Starting Linux ISO write...\n");
+                            buffer.set_text(&current_text);
+                            crate::flows::linux_flow::write_iso_to_usb(
+                                &iso_path_clone,
+                                &device_path_clone,
+                                &mut std::io::Cursor::new(Vec::new())
+                            )
+                        };
+
+                        // Update UI after operation completes
+                        progress_bar_clone.set_fraction(1.0);
+                        write_button_clone.set_sensitive(true);
+
+                        let buffer = log_view_clone.buffer();
+                        let start = buffer.start_iter();
+                        let end = buffer.end_iter();
+                        let mut text = buffer.text(&start, &end, false).to_string();
+
+                        match result {
+                            Ok(()) => {
+                                text.push_str("\n✓ Write operation completed successfully!\n");
+                                progress_bar_clone.set_text(Some("Complete!"));
+                            },
+                            Err(e) => {
+                                text.push_str(&format!("\n✗ Write operation failed: {}\n", e));
+                                progress_bar_clone.set_text(Some("Failed"));
+                            }
+                        }
+
+                        buffer.set_text(&text);
+                    });
+
+                    dialog.show();
                 });
             }
 
