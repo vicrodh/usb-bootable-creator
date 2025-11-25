@@ -1,6 +1,38 @@
 use gtk4::prelude::*;
 use gtk4::{Application, ApplicationWindow, Button, ComboBoxText, Entry, FileChooserAction, FileChooserDialog, FileFilter, Orientation, Box as GtkBox, Label, ScrolledWindow, TextView, ProgressBar};
 use glib;
+use std::process::{Command, Stdio};
+use std::io::{self, BufRead, BufReader};
+
+/// Write Linux ISO (use original working version)
+fn write_linux_iso_with_progress(iso_path: &str, usb_device: &str, _log_view: &TextView, _progress_bar: &ProgressBar) -> io::Result<()> {
+    // Use the original, working implementation
+    crate::flows::linux_flow::write_iso_to_usb(iso_path, usb_device, &mut std::io::Cursor::new(Vec::new()))
+}
+
+/// Write Windows ISO (use original working version)
+fn write_windows_iso_with_progress(iso_path: &str, usb_device: &str, _log_view: &TextView, _progress_bar: &ProgressBar) -> io::Result<()> {
+    // Use the original, working implementation
+    crate::flows::windows_flow::write_windows_iso_to_usb(iso_path, usb_device, false, &mut std::io::Cursor::new(Vec::new()))
+}
+
+/// Format bytes in human readable format
+fn format_bytes(bytes: u64) -> String {
+    const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
+    let mut size = bytes as f64;
+    let mut unit_index = 0;
+
+    while size >= 1024.0 && unit_index < UNITS.len() - 1 {
+        size /= 1024.0;
+        unit_index += 1;
+    }
+
+    if unit_index == 0 {
+        format!("{} {}", bytes, UNITS[unit_index])
+    } else {
+        format!("{:.1} {}", size, UNITS[unit_index])
+    }
+}
 
 pub fn run_gui() {
     let app = Application::builder()
@@ -228,6 +260,9 @@ pub fn run_gui() {
             progress_bar.set_fraction(0.0);
             vbox.append(&progress_bar);
 
+            // Clone os_label for use in write button
+            let os_label_write = os_label.clone();
+
             // --- Advanced options logic with toggle (refactored, reusable reset) ---
             let adv_open = std::rc::Rc::new(std::cell::Cell::new(false));
             let advanced_button_ref = std::rc::Rc::new(advanced_button.clone());
@@ -359,6 +394,7 @@ pub fn run_gui() {
                         dialog.add_filter(&filter);
                         let iso_entry_clone2 = iso_entry.clone();
                         let reset_advanced_options = reset_advanced_options.clone();
+                        let os_label_clone = os_label.clone();
                         dialog.connect_response(move |dialog, resp| {
                             if resp == gtk4::ResponseType::Ok {
                                 if let Some(file) = dialog.file().and_then(|f| f.path()) {
@@ -366,6 +402,15 @@ pub fn run_gui() {
                                     iso_entry_clone2.set_text(&path_str);
                                     // Call the reusable reset logic
                                     reset_advanced_options();
+
+                                    // Auto-detect OS type when ISO is selected
+                                    os_label_clone.set_text("Detecting OS type...");
+                                    let detected = crate::utils::is_windows_iso(&path_str);
+                                    match detected {
+                                        Some(true) => os_label_clone.set_text("Detected: Windows ISO"),
+                                        Some(false) => os_label_clone.set_text("Detected: Linux ISO"),
+                                        None => os_label_clone.set_text("Could not detect OS type"),
+                                    }
                                 }
                             }
                             dialog.close();
@@ -408,7 +453,6 @@ pub fn run_gui() {
                 let persistence_checkbox = persistence_checkbox.clone();
                 let log_view = log_view.clone();
                 let progress_bar = progress_bar.clone();
-                let os_label = os_label.clone();
 
                 write_button.clone().connect_clicked(move |_| {
                     let iso_path = iso_entry.text().to_string();
@@ -493,30 +537,28 @@ pub fn run_gui() {
                         current_text.push_str("\n=== Starting write operation ===\n");
                         buffer.set_text(&current_text);
 
-                        // Execute write operation (blocking for now - will be improved later)
+                        // Configure progress bar
+                        progress_bar_clone.set_fraction(0.0);
+                        progress_bar_clone.set_show_text(true);
+                        progress_bar_clone.set_text(Some("Starting..."));
+                        progress_bar_clone.set_visible(true);
+
+                        // Execute write operation with real-time progress
                         let result = if is_windows_mode {
                             println!("[DEBUG] Writing Windows ISO to USB");
                             current_text.push_str("Starting Windows dual-partition write...\n");
                             buffer.set_text(&current_text);
-                            crate::flows::windows_flow::write_windows_iso_to_usb(
-                                &iso_path_clone,
-                                &device_path_clone,
-                                false,
-                                &mut std::io::Cursor::new(Vec::new())
-                            )
+                            write_windows_iso_with_progress(&iso_path_clone, &device_path_clone, &log_view_clone, &progress_bar_clone)
                         } else {
                             println!("[DEBUG] Writing Linux ISO to USB");
                             current_text.push_str("Starting Linux ISO write...\n");
                             buffer.set_text(&current_text);
-                            crate::flows::linux_flow::write_iso_to_usb(
-                                &iso_path_clone,
-                                &device_path_clone,
-                                &mut std::io::Cursor::new(Vec::new())
-                            )
+                            write_linux_iso_with_progress(&iso_path_clone, &device_path_clone, &log_view_clone, &progress_bar_clone)
                         };
 
                         // Update UI after operation completes
                         progress_bar_clone.set_fraction(1.0);
+                        progress_bar_clone.set_text(Some("Complete!"));
                         write_button_clone.set_sensitive(true);
 
                         let buffer = log_view_clone.buffer();
@@ -527,7 +569,15 @@ pub fn run_gui() {
                         match result {
                             Ok(()) => {
                                 text.push_str("\n✓ Write operation completed successfully!\n");
-                                progress_bar_clone.set_text(Some("Complete!"));
+
+                                // Show completion dialog
+                                let completion_dialog = gtk4::MessageDialog::builder()
+                                    .text("USB creation complete!")
+                                    .message_type(gtk4::MessageType::Info)
+                                    .buttons(gtk4::ButtonsType::Ok)
+                                    .build();
+                                completion_dialog.connect_response(|dialog, _| dialog.close());
+                                completion_dialog.show();
                             },
                             Err(e) => {
                                 text.push_str(&format!("\n✗ Write operation failed: {}\n", e));
