@@ -35,6 +35,9 @@ fn format_bytes(bytes: u64) -> String {
 }
 
 pub fn run_gui() {
+    // Apply user's visual theme settings before creating GUI
+    crate::utils::apply_user_theme();
+
     let app = Application::builder()
         .application_id("com.example.usbbootablecreator")
         .build();
@@ -392,6 +395,12 @@ pub fn run_gui() {
                         filter.add_pattern("*.iso");
                         filter.set_name(Some("ISO files"));
                         dialog.add_filter(&filter);
+
+                        // Set initial folder to user's home directory
+                        let user_home = crate::utils::get_user_home();
+                        let gfile = gtk4::gio::File::for_path(&user_home);
+                        dialog.set_current_folder(Some(&gfile));
+
                         let iso_entry_clone2 = iso_entry.clone();
                         let reset_advanced_options = reset_advanced_options.clone();
                         let os_label_clone = os_label.clone();

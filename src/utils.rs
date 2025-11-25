@@ -14,20 +14,99 @@ pub fn is_root() -> bool {
     unsafe { libc::geteuid() == 0 }
 }
 
+/// Utility: Get the original user's home directory
+pub fn get_user_home() -> String {
+    // Try to get the original home directory preserved during elevation
+    if let Ok(home) = std::env::var("ORIGINAL_HOME") {
+        return home;
+    }
+
+    // Fallback to current HOME (should work in most cases)
+    if let Ok(home) = std::env::var("HOME") {
+        return home;
+    }
+
+    // Final fallback - try to get user's home from /etc/passwd
+    let user = get_original_user();
+    if let Ok(output) = std::process::Command::new("getent")
+            .arg("passwd")
+            .arg(&user)
+            .output()
+        {
+            let passwd_line = String::from_utf8_lossy(&output.stdout);
+            for line in passwd_line.lines() {
+                let parts: Vec<&str> = line.split(':').collect();
+                if parts.len() >= 6 {
+                    return parts[5].to_string();
+                }
+            }
+        }
+
+    // Last resort
+    "/".to_string()
+}
+
+/// Utility: Get the original username
+pub fn get_original_user() -> String {
+    if let Ok(user) = std::env::var("ORIGINAL_USER") {
+        return user;
+    }
+
+    // Try current user
+    std::env::var("USER")
+        .or_else(|_| std::env::var("USERNAME"))
+        .unwrap_or_else(|_| "user".to_string())
+}
+
+/// Utility: Apply user's visual theme settings
+pub fn apply_user_theme() {
+    // Apply GTK theme if specified
+    if let Ok(theme) = std::env::var("GTK_THEME") {
+        unsafe { std::env::set_var("GTK_THEME", theme); }
+    }
+
+    // Apply icon theme if available
+    if let Ok(icon_theme) = std::env::var("ICON_THEME") {
+        unsafe { std::env::set_var("ICON_THEME", icon_theme); }
+    }
+
+    // Try to load theme from user's config directory
+    let xdg_config = std::env::var("XDG_CONFIG_HOME").unwrap_or_else(|_| {
+        let home = get_user_home();
+        format!("{}/.config", home)
+    });
+
+    let gtk_settings_path = format!("{}/gtk-3.0/settings.ini", xdg_config);
+    if std::path::Path::new(&gtk_settings_path).exists() {
+        // GTK should automatically pick up these settings
+        unsafe { std::env::set_var("GTK_SETTINGS_PATH", &gtk_settings_path); }
+    }
+}
+
 /// Utility: Relaunch with pkexec if not root
 pub fn ensure_root() {
     if !is_root() {
         let exe = std::env::current_exe().unwrap();
         let args: Vec<String> = std::env::args().skip(1).collect();
 
-        // Propaga variables de entorno gráficas
+        // Propaga variables de entorno gráficas y del usuario
         let display = std::env::var("DISPLAY").unwrap_or_default();
         let wayland = std::env::var("WAYLAND_DISPLAY").unwrap_or_default();
         let xauth = std::env::var("XAUTHORITY").unwrap_or_default();
         let xdg_runtime = std::env::var("XDG_RUNTIME_DIR").unwrap_or_default();
 
+        // Variables del entorno del usuario original
+        let user_home = std::env::var("HOME").unwrap_or_default();
+        let user = std::env::var("USER").unwrap_or_else(|_| std::env::var("USERNAME").unwrap_or_default());
+        let xdg_data_home = std::env::var("XDG_DATA_HOME").unwrap_or_default();
+        let xdg_config_home = std::env::var("XDG_CONFIG_HOME").unwrap_or_default();
+        let gtk_theme = std::env::var("GTK_THEME").unwrap_or_default();
+        let icon_theme = std::env::var("ICON_THEME").unwrap_or_default();
+
         let mut cmd = std::process::Command::new("pkexec");
         cmd.arg("env");
+
+        // Variables gráficas
         if !display.is_empty() {
             cmd.arg(format!("DISPLAY={}", display));
         }
@@ -39,6 +118,27 @@ pub fn ensure_root() {
         }
         if !xdg_runtime.is_empty() {
             cmd.arg(format!("XDG_RUNTIME_DIR={}", xdg_runtime));
+        }
+
+        // Variables del entorno del usuario original
+        if !user_home.is_empty() {
+            cmd.arg(format!("ORIGINAL_HOME={}", user_home));
+            cmd.arg(format!("HOME={}", user_home)); // Mantener HOME original
+        }
+        if !user.is_empty() {
+            cmd.arg(format!("ORIGINAL_USER={}", user));
+        }
+        if !xdg_data_home.is_empty() {
+            cmd.arg(format!("XDG_DATA_HOME={}", xdg_data_home));
+        }
+        if !xdg_config_home.is_empty() {
+            cmd.arg(format!("XDG_CONFIG_HOME={}", xdg_config_home));
+        }
+        if !gtk_theme.is_empty() {
+            cmd.arg(format!("GTK_THEME={}", gtk_theme));
+        }
+        if !icon_theme.is_empty() {
+            cmd.arg(format!("ICON_THEME={}", icon_theme));
         }
         cmd.arg(exe);
         for arg in args {
