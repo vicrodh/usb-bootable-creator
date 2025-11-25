@@ -491,9 +491,13 @@ pub fn run_gui() {
 
                     // Update UI for write operation
                     write_button.set_sensitive(false);
+
+                    // Configure infinite progress bar
                     progress_bar.set_fraction(0.0);
                     progress_bar.set_show_text(true);
-                    progress_bar.set_text(Some("Starting..."));
+                    progress_bar.set_text(Some("Preparing to write..."));
+                    progress_bar.set_pulse_step(0.1);
+                    progress_bar.set_visible(true);
 
                     let buffer = log_view.buffer();
                     let mut log_text = format!("Starting write operation:\n");
@@ -552,17 +556,87 @@ pub fn run_gui() {
                         progress_bar_clone.set_text(Some("Starting..."));
                         progress_bar_clone.set_visible(true);
 
-                        // Execute write operation with real-time progress
+                        // Start infinite progress animation
+                        let progress_bar_anim = progress_bar_clone.clone();
+                        let buffer_anim = log_view_clone.buffer();
+                        glib::timeout_add_local(std::time::Duration::from_millis(100), move || {
+                            progress_bar_anim.pulse();
+
+                            // Update status text periodically
+                            let start = buffer_anim.start_iter();
+                            let end = buffer_anim.end_iter();
+                            let current_log = buffer_anim.text(&start, &end, false).to_string();
+
+                            // Only append if we haven't added a recent status update
+                            if !current_log.contains("Writing") {
+                                let mut new_log = current_log;
+                                new_log.push_str("Writing ISO to USB device...\n");
+                                buffer_anim.set_text(&new_log);
+                            }
+
+                            glib::ControlFlow::Continue
+                        });
+
+                        // Execute write operation with enhanced logging
                         let result = if is_windows_mode {
                             println!("[DEBUG] Writing Windows ISO to USB");
                             current_text.push_str("Starting Windows dual-partition write...\n");
+                            current_text.push_str("Creating BOOT and ESD-USB partitions...\n");
                             buffer.set_text(&current_text);
-                            write_windows_iso_with_progress(&iso_path_clone, &device_path_clone, &log_view_clone, &progress_bar_clone)
+
+                            // Update progress status
+                            let progress_bar_status = progress_bar_clone.clone();
+                            let buffer_status = log_view_clone.buffer();
+                            glib::timeout_add_local(std::time::Duration::from_millis(500), move || {
+                                let start = buffer_status.start_iter();
+                                let end = buffer_status.end_iter();
+                                let current_log = buffer_status.text(&start, &end, false).to_string();
+
+                                if !current_log.contains("Creating BOOT") && !current_log.contains("Copying") {
+                                    let mut new_log = current_log;
+                                    new_log.push_str("Creating BOOT and ESD-USB partitions...\n");
+                                    buffer_status.set_text(&new_log);
+                                    progress_bar_status.set_text(Some("Creating partitions..."));
+                                }
+
+                                glib::ControlFlow::Break
+                            });
+
+                            crate::flows::windows_flow::write_windows_iso_to_usb(
+                                &iso_path_clone,
+                                &device_path_clone,
+                                false,
+                                &mut std::io::Cursor::new(Vec::new())
+                            )
                         } else {
                             println!("[DEBUG] Writing Linux ISO to USB");
                             current_text.push_str("Starting Linux ISO write...\n");
+                            current_text.push_str("Writing image using dd command...\n");
                             buffer.set_text(&current_text);
-                            write_linux_iso_with_progress(&iso_path_clone, &device_path_clone, &log_view_clone, &progress_bar_clone)
+
+                            // Update progress status
+                            let progress_bar_status = progress_bar_clone.clone();
+                            let buffer_status = log_view_clone.buffer();
+                            glib::timeout_add_local(std::time::Duration::from_millis(500), move || {
+                                let start = buffer_status.start_iter();
+                                let end = buffer_status.end_iter();
+                                let current_log = buffer_status.text(&start, &end, false).to_string();
+
+                                if !current_log.contains("dd command") {
+                                    let mut new_log = current_log;
+                                    new_log.push_str("Writing ISO image with dd...\n");
+                                    buffer_status.set_text(&new_log);
+                                    progress_bar_status.set_text(Some("Writing image..."));
+                                }
+
+                                glib::ControlFlow::Break
+                            });
+
+                            crate::flows::linux_flow::write_iso_to_usb(
+                                &iso_path_clone,
+                                &device_path_clone,
+                                &mut std::io::Cursor::new(Vec::new())
+                            )
                         };
 
                         // Update UI after operation completes

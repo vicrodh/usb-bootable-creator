@@ -114,3 +114,17 @@ flake.lock
 /default.nix
 
 # Before adding new lines, see the comment at the top.
+
+# Development and documentation files (untracked)
+AGENTS.md
+CHANGELOG.md
+CLAUDE.md
+HANDOFF_STATE.md
+PLAN.md
+Qt6_MIGRATION_ANALYSIS.md
+src/config.rs
+src/error.rs
+src/flows/linux_persistence.rs
+
+# Reference branches (untracked)
+main-reference/
