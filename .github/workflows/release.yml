@@ -50,7 +50,7 @@ jobs:
           cargo deb --no-build --target ${{ matrix.target }}
           cp target/${{ matrix.target }}/debian/*.deb dist/ || cp target/debian/*.deb dist/
 
-      # - name: Ensure RPM metadata section exists
+        # - name: Ensure RPM metadata section exists
       #   run: |
       #     if ! grep -q '\[package.metadata.rpm\]' Cargo.toml; then
       #       echo "No [package.metadata.rpm] found. Running cargo rpm init..."
