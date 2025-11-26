@@ -3,7 +3,7 @@ use gtk4::{Application, ApplicationWindow, Button, ComboBoxText, Entry, FileChoo
 use glib::{self, Priority};
 use std::io;
 
-use crate::flows::linux_persistence::{self, PersistenceConfig};
+use crate::flows::linux_persistence::{self, PersistenceConfig, PartitionTableType};
 
 enum WorkerMessage {
     Log(String),
@@ -228,6 +228,14 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
             let persistence_checkbox = gtk4::CheckButton::with_label("Add persistence");
             persistence_checkbox.set_active(false);
             linux_group.append(&persistence_checkbox);
+            // Partition table type selector
+            let table_type_combo = ComboBoxText::new();
+            table_type_combo.append_text("GPT (default)");
+            table_type_combo.append_text("MBR (msdos)");
+            table_type_combo.set_active(Some(0));
+            let table_type_label = Label::new(Some("Partition table type (persistence):"));
+            linux_group.append(&table_type_label);
+            linux_group.append(&table_type_combo);
             vbox.append(&linux_group);
 
             // Write and Advanced options buttons (side by side, centered)
@@ -282,6 +290,7 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
                 let linux_group = linux_group.clone();
                 let cluster_combo = cluster_combo.clone();
                 let persistence_checkbox = persistence_checkbox.clone();
+                let table_type_combo = table_type_combo.clone();
                 let os_label = os_label.clone();
                 let advanced_button_ref = advanced_button_ref.clone();
                 let adv_open = adv_open.clone();
@@ -524,6 +533,10 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
                     } else if linux_group.is_visible() {
                         let persistence = persistence_checkbox.is_active();
                         if persistence {
+                            let table_type = match table_type_combo.active().unwrap_or(0) {
+                                1 => PartitionTableType::Mbr,
+                                _ => PartitionTableType::Gpt,
+                            };
                             let persistence_type = match linux_persistence::detect_persistence_type(&iso_path) {
                                 Ok(kind) => kind,
                                 Err(e) => {
@@ -551,6 +564,7 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
                                 size_mb: recommended_size,
                                 persistence_type,
                                 label: "persistence".to_string(),
+                                partition_table: table_type,
                             };
 
                             if let Err(e) = linux_persistence::validate_persistence_config(&config) {
@@ -564,6 +578,10 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
                             log_text.push_str(&format!(
                                 "  Mode: Linux (persistence: enabled, type: {:?}, size: {} MB)\n",
                                 config.persistence_type, config.size_mb
+                            ));
+                            log_text.push_str(&format!(
+                                "  Partition table: {:?}\n",
+                                config.partition_table
                             ));
                             persistence_config = Some(config);
                         } else {
