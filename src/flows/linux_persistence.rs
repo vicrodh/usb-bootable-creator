@@ -630,6 +630,14 @@ fn run_command(cmd: &str, args: &[&str]) -> UsbCreatorResult<()> {
         Ok(())
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr);
+        // Treat known non-fatal parted warnings (2048/512) as success
+        if cmd == "parted"
+            && stderr
+                .contains("The driver descriptor says the physical block size is 2048 bytes, but Linux says it is 512 bytes")
+        {
+            println!("[PERSISTENCE] {} warning about 2048/512 block size; continuing.", cmd);
+            return Ok(());
+        }
         Err(UsbCreatorError::command_failed(cmd, stderr.trim()))
     }
 }
@@ -645,6 +653,13 @@ fn run_command_with_output(cmd: &str, args: &[&str]) -> UsbCreatorResult<String>
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr);
+        if cmd == "parted"
+            && stderr
+                .contains("The driver descriptor says the physical block size is 2048 bytes, but Linux says it is 512 bytes")
+        {
+            println!("[PERSISTENCE] {} warning about 2048/512 block size; continuing.", cmd);
+            return Ok(String::from_utf8_lossy(&output.stdout).to_string());
+        }
         Err(UsbCreatorError::command_failed(cmd, stderr.trim()))
     }
 }
