@@ -709,6 +709,7 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
                                     &mut std::io::Cursor::new(Vec::new()),
                                     persistence_for_thread
                                 ).map_err(|e| e.to_string());
+                                send(WorkerMessage::Status("Finalizing persistence (if enabled)...".into()));
                                 let _ = sender_clone.send(WorkerMessage::Done(result));
                             }
                         });

@@ -16,6 +16,10 @@ pub fn write_iso_to_usb_with_persistence(
     log: &mut dyn Write,
     persistence: Option<PersistenceConfig>,
 ) -> io::Result<()> {
+    if persistence.is_some() {
+        writeln!(log, "[PERSISTENCE] Persistence requested. Will add partition after write.")?;
+    }
+
     if let Some(config) = &persistence {
         validate_persistence_config(config).map_err(to_io_error)?;
     }
@@ -31,6 +35,7 @@ pub fn write_iso_to_usb_with_persistence(
     if status.success() {
         writeln!(log, "ISO written successfully to {}", usb_device)?;
         if let Some(config) = persistence {
+            writeln!(log, "[PERSISTENCE] Starting persistence partition creation...")?;
             create_persistence_partition(usb_device, &config).map_err(to_io_error)?;
         }
         Ok(())

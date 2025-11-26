@@ -58,6 +58,7 @@ pub fn create_persistence_partition(
     // For GPT-based ISOs, expand the secondary GPT to the end of the device so new partitions fit
     maybe_expand_gpt(usb_device)?;
     let _ = run_command("partprobe", &[usb_device]);
+    settle_udev();
 
     // Find the next available partition number
     let partition_number = find_next_partition_number(usb_device)?;
@@ -161,7 +162,9 @@ fn build_partition_path(device: &str, partition_number: u32) -> String {
 
 /// Unmount any mounted partitions from the target device to avoid busy errors
 fn unmount_device_partitions(device: &str) -> UsbCreatorResult<()> {
+    println!("[PERSISTENCE] Checking for mounted partitions on {}...", device);
     let output = run_command_with_output("lsblk", &["-ln", "-o", "NAME,MOUNTPOINT", device])?;
+    let mut unmounted = false;
     for line in output.lines() {
         let mut parts = line.split_whitespace();
         let name = parts.next().unwrap_or_default();
@@ -170,7 +173,11 @@ fn unmount_device_partitions(device: &str) -> UsbCreatorResult<()> {
             let dev_path = format!("/dev/{}", name);
             println!("[PERSISTENCE] Unmounting {} from {}", dev_path, mp);
             let _ = run_command("umount", &[mp]);
+            unmounted = true;
         }
+    }
+    if !unmounted {
+        println!("[PERSISTENCE] No mounted partitions detected on {}.", device);
     }
     Ok(())
 }
@@ -201,6 +208,18 @@ fn maybe_expand_gpt(device: &str) -> UsbCreatorResult<()> {
         }
     }
     Ok(())
+}
+
+/// Best-effort udev settle to avoid racing kernel partition table updates
+fn settle_udev() {
+    if let Ok(output) = Command::new("udevadm").args(["settle"]).output() {
+        if !output.status.success() {
+            println!(
+                "[PERSISTENCE] udevadm settle returned non-zero ({}); continuing.",
+                String::from_utf8_lossy(&output.stderr).trim()
+            );
+        }
+    }
 }
 
 /// Setup Casper persistence (Ubuntu/Debian)
@@ -381,12 +400,17 @@ pub fn get_recommended_persistence_size(
 }
 
 fn run_command(cmd: &str, args: &[&str]) -> UsbCreatorResult<()> {
+    println!("[PERSISTENCE] Running command: {} {}", cmd, args.join(" "));
     let output = Command::new(cmd)
         .args(args)
         .output()
         .map_err(|e| UsbCreatorError::Io(e, format!("Failed to spawn {}", cmd)))?;
 
     if output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        if !stdout.trim().is_empty() {
+            println!("[PERSISTENCE] {} stdout: {}", cmd, stdout.trim());
+        }
         Ok(())
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -395,6 +419,7 @@ fn run_command(cmd: &str, args: &[&str]) -> UsbCreatorResult<()> {
 }
 
 fn run_command_with_output(cmd: &str, args: &[&str]) -> UsbCreatorResult<String> {
+    println!("[PERSISTENCE] Running command: {} {}", cmd, args.join(" "));
     let output = Command::new(cmd)
         .args(args)
         .output()
