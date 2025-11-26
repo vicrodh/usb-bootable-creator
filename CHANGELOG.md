@@ -11,7 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Complete GUI Modular Architecture**
   - `src/gui/widgets.rs` - 17 widget creation functions for ISO selection, device selection, progress bars, and advanced options
   - `src/gui/events.rs` - 3 event handler functions for button clicks, device refresh, and write operations
-  - `src/gui/dialogs.rs` - 5 dialog creation functions for confirmations, errors, and progress feedback
+  - `src/gui/dialogs.rs` - 6 dialog creation functions for confirmations, errors, progress feedback, file selection, and Flatpak instructions
+  - **Dialog Integration**: All inlined dialogs in app.rs successfully replaced with modular calls:
+    - Missing packages dialog → `show_missing_packages_dialog_simple()`
+    - ISO file chooser → `show_iso_file_chooser_dialog_app()`
+    - USB write confirmation → `show_usb_write_confirmation_dialog()`
+    - Operation completion → `show_usb_completion_dialog()`
+    - Flatpak permissions → `show_flatpak_instructions_dialog()`
+  - **Code Organization**: Removed duplicate dialog implementations from app.rs, achieving clean separation of concerns
 - **Enhanced User Experience**
   - Infinite progress bar with pulsing animation during write operations
   - Real-time status logging for Windows and Linux write processes

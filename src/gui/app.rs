@@ -5,6 +5,7 @@ use std::io;
 
 use crate::flows::linux_persistence::{self, PersistenceConfig, PartitionTableType};
 use crate::gui::widgets as gui_widgets;
+use crate::gui::dialogs as gui_dialogs;
 
 enum WorkerMessage {
     Log(String),
@@ -53,35 +54,7 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
     app.connect_activate(move |app| {
         // Check for required packages before showing the main window
         if let Some((_, install_cmd)) = crate::utils::check_required_packages() {
-            let dialog = gtk4::Dialog::with_buttons(
-                Some("Missing Required Packages"),
-                None::<&gtk4::Window>,
-                gtk4::DialogFlags::MODAL,
-                &[("OK", gtk4::ResponseType::Ok)],
-            );
-            let content = dialog.content_area();
-            let vbox = GtkBox::new(Orientation::Vertical, 8);
-            let label = Label::new(Some("Some required system packages are missing. Please install them using the command below:"));
-            vbox.append(&label);
-            let text_area = TextView::new();
-            text_area.set_editable(false);
-            text_area.set_cursor_visible(false);
-            text_area.buffer().set_text(&install_cmd);
-            vbox.append(&text_area);
-            let copy_button = Button::with_label("Copy Command");
-            let install_cmd_clone = install_cmd.clone();
-            copy_button.connect_clicked(move |_| {
-                if let Some(display) = gtk4::gdk::Display::default() {
-                    let clipboard = display.clipboard();
-                    clipboard.set_text(&install_cmd_clone);
-                }
-            });
-            vbox.append(&copy_button);
-            content.append(&vbox);
-            dialog.set_modal(true);
-            dialog.set_default_response(gtk4::ResponseType::Ok);
-            dialog.connect_response(|dialog, _| dialog.close());
-            dialog.show();
+            gui_dialogs::show_missing_packages_dialog_simple(None, install_cmd);
         } else {
             // Main window
             let window = ApplicationWindow::builder()
@@ -266,48 +239,13 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
                 let reset_advanced_options = reset_advanced_options.clone();
                 iso_button.connect_clicked(move |_| {
                     if let Some(window) = window_weak_browse.upgrade() {
-                        let dialog = FileChooserDialog::new(
-                            Some("Select ISO Image"),
-                            Some(&window),
-                            FileChooserAction::Open,
-                            &[ ]
-                        );
-                        dialog.add_button("Open", gtk4::ResponseType::Ok);
-                        dialog.add_button("Cancel", gtk4::ResponseType::Cancel);
-                        let filter = FileFilter::new();
-                        filter.add_pattern("*.iso");
-                        filter.set_name(Some("ISO files"));
-                        dialog.add_filter(&filter);
-
-                        // Set initial folder to user's home directory
-                        let user_home = crate::utils::get_user_home();
-                        let gfile = gtk4::gio::File::for_path(&user_home);
-                        dialog.set_current_folder(Some(&gfile));
-
-                        let iso_entry_clone2 = iso_entry.clone();
                         let reset_advanced_options = reset_advanced_options.clone();
-                        let os_label_clone = os_label.clone();
-                        dialog.connect_response(move |dialog, resp| {
-                            if resp == gtk4::ResponseType::Ok {
-                                if let Some(file) = dialog.file().and_then(|f| f.path()) {
-                                    let path_str = file.to_string_lossy().to_string();
-                                    iso_entry_clone2.set_text(&path_str);
-                                    // Call the reusable reset logic
-                                    reset_advanced_options();
-
-                                    // Auto-detect OS type when ISO is selected
-                                    os_label_clone.set_text("Detecting OS type...");
-                                    let detected = crate::utils::is_windows_iso(&path_str);
-                                    match detected {
-                                        Some(true) => os_label_clone.set_text("Detected: Windows ISO"),
-                                        Some(false) => os_label_clone.set_text("Detected: Linux ISO"),
-                                        None => os_label_clone.set_text("Could not detect OS type"),
-                                    }
-                                }
-                            }
-                            dialog.close();
-                        });
-                        dialog.show();
+                        gui_dialogs::show_iso_file_chooser_dialog_app(
+                            &window,
+                            &iso_entry,
+                            &os_label,
+                            move || reset_advanced_options(),
+                        );
                     }
                 });
             }
@@ -345,6 +283,7 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
                 let persistence_checkbox = persistence_checkbox.clone();
                 let log_view = log_view.clone();
                 let progress_bar = progress_bar.clone();
+                let window_for_dialog = window.clone();
 
                 write_button.clone().connect_clicked(move |_| {
                     let iso_path = iso_entry.text().to_string();
@@ -462,12 +401,10 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
                     buffer.set_text(&log_text);
 
                     // Show confirmation dialog before starting
-                    let dialog = gtk4::MessageDialog::builder()
-                        .text("Confirm USB Write Operation")
-                        .secondary_text(&format!("This will completely erase:\n{}\n\nProceed with write operation?", device_path))
-                        .buttons(gtk4::ButtonsType::OkCancel)
-                        .message_type(gtk4::MessageType::Warning)
-                        .build();
+                    let dialog = gui_dialogs::show_usb_write_confirmation_dialog(
+                        Some(&window_for_dialog),
+                        &device_path
+                    );
 
                     let progress_bar_clone = progress_bar.clone();
                     let write_button_clone = write_button.clone();
@@ -549,11 +486,7 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
                                             Ok(()) => {
                                                 text.push_str("\n✓ Write operation completed successfully!\n");
                                                 progress_ui.set_text(Some("Complete!"));
-                                                let completion_dialog = gtk4::MessageDialog::builder()
-                                                    .text("USB creation complete!")
-                                                    .message_type(gtk4::MessageType::Info)
-                                                    .buttons(gtk4::ButtonsType::Ok)
-                                                    .build();
+                                                let completion_dialog = gui_dialogs::show_usb_completion_dialog();
                                                 completion_dialog.connect_response(|dialog, _| dialog.close());
                                                 completion_dialog.show();
                                             }
@@ -615,7 +548,7 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
 
             // Show Flatpak permission dialog if needed
             if needs_root && is_flatpak {
-                show_flatpak_instructions_dialog(&window);
+                gui_dialogs::show_flatpak_instructions_dialog(&window);
             }
         }
     });
@@ -623,32 +556,3 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
     app.run();
 }
 
-fn show_flatpak_instructions_dialog(window: &ApplicationWindow) {
-    let dialog = MessageDialog::builder()
-        .text("🔒 Permisos de Root Requeridos")
-        .secondary_text(
-            "Esta aplicación necesita acceso root para gestionar dispositivos USB.\n\n\
-            ⚠️  ESTÁS EJECUTANDO EN FLATPAK ⚠️\n\n\
-            En Flatpak no se pueden obtener permisos automáticamente.\n\
-            Por favor, cierra esta aplicación y ejecute:\n\n\
-            💻 COMANDO RECOMENDADO:\n\
-            flatpak-spawn --host pkexec flatpak run com.github.vicrodh.MajUSB\n\n\
-            📋 INSTRUCCIONES:\n\
-            1. Instale flatpak-xdg-utils si no lo tiene:\n\
-               flatpak install flathub org.freedesktop.Sdk.Extension.flatpak-xdg-utils\n\n\
-            2. Ejecute el comando recomendado arriba\n\n\
-            3. O instale manualmente las herramientas necesarias"
-        )
-        .buttons(ButtonsType::Ok)
-        .message_type(MessageType::Warning)
-        .modal(true)
-        .transient_for(window)
-        .build();
-
-    dialog.set_default_response(ResponseType::Ok);
-    dialog.connect_response(|dialog, _| {
-        dialog.close();
-    });
-
-    dialog.show();
-}
