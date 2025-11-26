@@ -8,6 +8,9 @@ use std::thread;
 use std::time::Duration;
 use tempfile;
 
+const SAFETY_MARGIN_MB: u64 = 512;
+const TABLE_REFRESH_ATTEMPTS: usize = 5;
+
 /// Configuration for Linux persistence
 #[derive(Debug, Clone)]
 pub struct PersistenceConfig {
@@ -59,6 +62,7 @@ pub fn create_persistence_partition(
     let _ = Command::new("partprobe").arg(usb_device).status();
     settle_udev();
     thread::sleep(Duration::from_millis(500));
+    refresh_partition_table(usb_device)?;
 
     // Ensure nothing is mounted from the target device before we repartition
     let previously_mounted = unmount_device_partitions(usb_device)?;
@@ -79,6 +83,7 @@ pub fn create_persistence_partition(
     let _ = run_command("partprobe", &[usb_device]);
     settle_udev();
     thread::sleep(Duration::from_millis(500));
+    refresh_partition_table(usb_device)?;
 
     // Find the next available partition number
     let partition_number = find_next_partition_number(usb_device)?;
@@ -86,6 +91,8 @@ pub fn create_persistence_partition(
 
     // Calculate partition start (we need to find where the existing partitions end)
     let start_sector = find_next_available_sector(usb_device)?;
+    let total_sectors = get_total_sectors(usb_device)?;
+    ensure_free_space(usb_device, start_sector, total_sectors, config.size_mb)?;
     let end_sector = start_sector + (config.size_mb * 2048).saturating_sub(1); // 512-byte sectors
 
     // One more settle before creating the partition to avoid racing table updates
@@ -191,6 +198,13 @@ fn find_next_available_sector(device: &str) -> UsbCreatorResult<u64> {
     Ok(max_sector + 1) // Start from next sector
 }
 
+/// Get total sectors of device via blockdev --getsz
+fn get_total_sectors(device: &str) -> UsbCreatorResult<u64> {
+    let output = run_command_with_output("blockdev", &["--getsz", device])?;
+    let sectors = output.trim().parse::<u64>()?;
+    Ok(sectors)
+}
+
 /// Build partition path that works for /dev/sdX and /dev/nvmeXpY devices
 fn build_partition_path(device: &str, partition_number: u32) -> String {
     if device.chars().last().map(|c| c.is_ascii_digit()).unwrap_or(false) {
@@ -228,6 +242,48 @@ fn unmount_device_partitions(device: &str) -> UsbCreatorResult<Vec<(String, Stri
     Ok(mounts)
 }
 
+/// Ensure free space is sufficient for the requested persistence size plus a safety margin.
+fn ensure_free_space(device: &str, start_sector: u64, total_sectors: u64, size_mb: u64) -> UsbCreatorResult<()> {
+    // sectors are 512 bytes
+    let free_sectors = total_sectors.saturating_sub(start_sector);
+    let free_mb = free_sectors.saturating_mul(512) / 1024 / 1024;
+    if free_mb <= SAFETY_MARGIN_MB {
+        return Err(UsbCreatorError::validation_error(
+            format!("Not enough free space on {} for persistence (only {} MB free)", device, free_mb),
+        ));
+    }
+    let needed = size_mb + SAFETY_MARGIN_MB;
+    if free_mb < needed {
+        return Err(UsbCreatorError::validation_error(
+            format!(
+                "Persistence size {} MB exceeds available space {} MB ({} MB safety margin)",
+                size_mb, free_mb, SAFETY_MARGIN_MB
+            ),
+        ));
+    }
+    Ok(())
+}
+
+/// Refresh partition table with retries to avoid races right after dd
+fn refresh_partition_table(device: &str) -> UsbCreatorResult<()> {
+    for attempt in 1..=TABLE_REFRESH_ATTEMPTS {
+        println!("[PERSISTENCE] Refreshing partition table (attempt {}/{})...", attempt, TABLE_REFRESH_ATTEMPTS);
+        let _ = Command::new("sync").status();
+        let _ = Command::new("partprobe").arg(device).status();
+        settle_udev();
+        thread::sleep(Duration::from_millis(300));
+        // Probe with parted print; success means kernel sees the table
+        match run_command_with_output("parted", &["-ms", device, "unit", "s", "print"]) {
+            Ok(_) => return Ok(()),
+            Err(e) => {
+                println!("[PERSISTENCE] Partition table refresh not yet visible: {}. Retrying...", e);
+            }
+        }
+    }
+    Err(UsbCreatorError::validation_error(
+        "Kernel did not refresh partition table after write; aborting persistence creation",
+    ))
+}
 /// Try to relocate the GPT backup header to the end of the device (best effort).
 /// This is needed for hybrid ISOs whose backup GPT sits at the end of the image,
 /// leaving free space unreachable until the header is moved.
