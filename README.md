@@ -10,7 +10,7 @@ A modern, cross-platform USB bootable drive creator written in Rust with a GTK4 
 - **Write Linux & Windows ISOs**: Handles both Linux and Windows bootable USB creation.
 - **Privilege Escalation**: Uses a secure helper binary with `pkexec` only when needed.
 - **Cluster Size Selection**: Choose NTFS cluster size for Windows ISOs.
-- **Dependency Check**: Detects missing system packages and provides install instructions.
+- **Dependency Check**: Detects missing system packages and provides install instructions (including GPT repair tool `sgdisk` for persistence).
 - **Auto-refresh Device List**: Detects USB device changes automatically.
 
 ---
@@ -31,13 +31,13 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 source $HOME/.cargo/env
 ```
 
-### 2. Install GTK4 and Required System Packages
+### 2. Install GTK4 and Required System Packages (include `sgdisk`/`gptfdisk`)
 
 <details>
 <summary><strong>Arch Linux / Manjaro / EndeavourOS / Artix / Garuda / SteamOS</strong></summary>
 
 ```sh
-sudo pacman -S --needed base-devel rustup gtk4 glib2 gio util-linux coreutils dosfstools ntfs-3g parted rsync polkit
+sudo pacman -S --needed base-devel rustup gtk4 glib2 gio util-linux coreutils dosfstools ntfs-3g parted gptfdisk rsync polkit
 ```
 </details>
 
@@ -46,7 +46,7 @@ sudo pacman -S --needed base-devel rustup gtk4 glib2 gio util-linux coreutils do
 
 ```sh
 sudo apt update
-sudo apt install -y build-essential rustup libgtk-4-dev libglib2.0-dev util-linux coreutils dosfstools ntfs-3g parted rsync policykit-1
+sudo apt install -y build-essential rustup libgtk-4-dev libglib2.0-dev util-linux coreutils dosfstools ntfs-3g parted gdisk rsync policykit-1
 ```
 </details>
 
@@ -55,7 +55,7 @@ sudo apt install -y build-essential rustup libgtk-4-dev libglib2.0-dev util-linu
 
 ```sh
 sudo apt update
-sudo apt install -y build-essential rustup libgtk-4-dev libglib2.0-dev util-linux coreutils dosfstools ntfs-3g parted rsync policykit-1
+sudo apt install -y build-essential rustup libgtk-4-dev libglib2.0-dev util-linux coreutils dosfstools ntfs-3g parted gdisk rsync policykit-1
 ```
 </details>
 
@@ -63,7 +63,7 @@ sudo apt install -y build-essential rustup libgtk-4-dev libglib2.0-dev util-linu
 <summary><strong>Fedora / Nobara / Bazzite</strong></summary>
 
 ```sh
-sudo dnf install -y @development-tools rust gtk4-devel glib2-devel gio-devel util-linux coreutils dosfstools ntfs-3g parted rsync polkit
+sudo dnf install -y @development-tools rust gtk4-devel glib2-devel gio-devel util-linux coreutils dosfstools ntfs-3g parted gdisk rsync polkit
 ```
 </details>
 
@@ -71,7 +71,7 @@ sudo dnf install -y @development-tools rust gtk4-devel glib2-devel gio-devel uti
 <summary><strong>openSUSE (Leap, Tumbleweed, GeckoLinux)</strong></summary>
 
 ```sh
-sudo zypper install -y rust gtk4-devel glib2-devel gio-devel util-linux coreutils dosfstools ntfs-3g parted rsync polkit
+sudo zypper install -y rust gtk4-devel glib2-devel gio-devel util-linux coreutils dosfstools ntfs-3g parted gptfdisk rsync polkit
 ```
 </details>
 
@@ -79,7 +79,7 @@ sudo zypper install -y rust gtk4-devel glib2-devel gio-devel util-linux coreutil
 <summary><strong>Alpine Linux</strong></summary>
 
 ```sh
-sudo apk add build-base rustup gtk4-dev glib-dev gio-dev lsblk coreutils dosfstools ntfs-3g-progs parted rsync polkit
+sudo apk add build-base rustup gtk4-dev glib-dev gio-dev lsblk coreutils dosfstools ntfs-3g-progs parted gptfdisk rsync polkit
 ```
 </details>
 
@@ -87,7 +87,7 @@ sudo apk add build-base rustup gtk4-dev glib-dev gio-dev lsblk coreutils dosfsto
 <summary><strong>Void Linux</strong></summary>
 
 ```sh
-sudo xbps-install -S base-devel rustup gtk4-devel glib-devel gio-devel util-linux coreutils dosfstools ntfs-3g parted rsync polkit
+sudo xbps-install -S base-devel rustup gtk4-devel glib-devel gio-devel util-linux coreutils dosfstools ntfs-3g parted gptfdisk rsync polkit
 ```
 </details>
 
@@ -95,7 +95,7 @@ sudo xbps-install -S base-devel rustup gtk4-devel glib-devel gio-devel util-linu
 <summary><strong>Gentoo</strong></summary>
 
 ```sh
-sudo emerge --ask sys-devel/gcc sys-devel/make sys-apps/util-linux sys-apps/coreutils sys-fs/dosfstools sys-fs/ntfs3g sys-block/parted net-misc/rsync sys-auth/polkit x11-libs/gtk+:4 dev-libs/glib dev-libs/gio dev-lang/rust
+sudo emerge --ask sys-devel/gcc sys-devel/make sys-apps/util-linux sys-apps/coreutils sys-fs/dosfstools sys-fs/ntfs3g sys-block/parted sys-apps/gptfdisk net-misc/rsync sys-auth/polkit x11-libs/gtk+:4 dev-libs/glib dev-libs/gio dev-lang/rust
 ```
 </details>
 
@@ -103,7 +103,7 @@ sudo emerge --ask sys-devel/gcc sys-devel/make sys-apps/util-linux sys-apps/core
 <summary><strong>NixOS</strong></summary>
 
 ```sh
-nix-env -iA nixos.gcc nixos.make nixos.util-linux nixos.coreutils nixos.dosfstools nixos.ntfs3g nixos.parted nixos.rsync nixos.polkit nixos.gtk4 nixos.glib nixos.gio nixos.rustc
+nix-env -iA nixos.gcc nixos.make nixos.util-linux nixos.coreutils nixos.dosfstools nixos.ntfs3g nixos.parted nixos.gptfdisk nixos.rsync nixos.polkit nixos.gtk4 nixos.glib nixos.gio nixos.rustc
 ```
 </details>
 

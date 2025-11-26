@@ -329,6 +329,7 @@ pub fn check_required_packages() -> Option<(Vec<String>, String)> {
         "mkfs.vfat",
         "mkfs.ntfs",
         "parted",
+        "sgdisk",
         "wipefs",
         "mount",
         "umount",
@@ -345,6 +346,7 @@ pub fn check_required_packages() -> Option<(Vec<String>, String)> {
     arch_map.insert("mkfs.vfat", "dosfstools");
     arch_map.insert("mkfs.ntfs", "ntfs-3g");
     arch_map.insert("parted", "parted");
+    arch_map.insert("sgdisk", "gptfdisk");
     arch_map.insert("wipefs", "util-linux");
     arch_map.insert("mount", "util-linux");
     arch_map.insert("umount", "util-linux");
@@ -358,6 +360,7 @@ pub fn check_required_packages() -> Option<(Vec<String>, String)> {
     debian_map.insert("mkfs.vfat", "dosfstools");
     debian_map.insert("mkfs.ntfs", "ntfs-3g");
     debian_map.insert("parted", "parted");
+    debian_map.insert("sgdisk", "gdisk");
     debian_map.insert("wipefs", "util-linux");
     debian_map.insert("mount", "mount");
     debian_map.insert("umount", "mount");
@@ -371,6 +374,7 @@ pub fn check_required_packages() -> Option<(Vec<String>, String)> {
     ubuntu_map.insert("mkfs.vfat", "dosfstools");
     ubuntu_map.insert("mkfs.ntfs", "ntfs-3g");
     ubuntu_map.insert("parted", "parted");
+    ubuntu_map.insert("sgdisk", "gdisk");
     ubuntu_map.insert("wipefs", "util-linux");
     ubuntu_map.insert("mount", "util-linux");
     ubuntu_map.insert("umount", "util-linux");
@@ -384,6 +388,7 @@ pub fn check_required_packages() -> Option<(Vec<String>, String)> {
     fedora_map.insert("mkfs.vfat", "dosfstools");
     fedora_map.insert("mkfs.ntfs", "ntfs-3g");
     fedora_map.insert("parted", "parted");
+    fedora_map.insert("sgdisk", "gdisk");
     fedora_map.insert("wipefs", "util-linux");
     fedora_map.insert("mount", "util-linux");
     fedora_map.insert("umount", "util-linux");
@@ -397,6 +402,7 @@ pub fn check_required_packages() -> Option<(Vec<String>, String)> {
     opensuse_map.insert("mkfs.vfat", "dosfstools");
     opensuse_map.insert("mkfs.ntfs", "ntfs-3g");
     opensuse_map.insert("parted", "parted");
+    opensuse_map.insert("sgdisk", "gptfdisk");
     opensuse_map.insert("wipefs", "util-linux");
     opensuse_map.insert("mount", "util-linux");
     opensuse_map.insert("umount", "util-linux");
@@ -410,6 +416,7 @@ pub fn check_required_packages() -> Option<(Vec<String>, String)> {
     alpine_map.insert("mkfs.vfat", "dosfstools");
     alpine_map.insert("mkfs.ntfs", "ntfs-3g-progs"); // provides mkfs.ntfs
     alpine_map.insert("parted", "parted");
+    alpine_map.insert("sgdisk", "gptfdisk");
     alpine_map.insert("wipefs", "wipefs");
     alpine_map.insert("mount", "mount");
     alpine_map.insert("umount", "umount");
@@ -423,6 +430,7 @@ pub fn check_required_packages() -> Option<(Vec<String>, String)> {
     void_map.insert("mkfs.vfat", "dosfstools");
     void_map.insert("mkfs.ntfs", "ntfs-3g");
     void_map.insert("parted", "parted");
+    void_map.insert("sgdisk", "gptfdisk");
     void_map.insert("wipefs", "util-linux");
     void_map.insert("mount", "util-linux");
     void_map.insert("umount", "util-linux");
@@ -436,6 +444,7 @@ pub fn check_required_packages() -> Option<(Vec<String>, String)> {
     gentoo_map.insert("mkfs.vfat", "sys-fs/dosfstools");
     gentoo_map.insert("mkfs.ntfs", "sys-fs/ntfs3g"); // requires USE flag ntfsprogs
     gentoo_map.insert("parted", "sys-block/parted");
+    gentoo_map.insert("sgdisk", "sys-apps/gptfdisk");
     gentoo_map.insert("wipefs", "sys-apps/util-linux");
     gentoo_map.insert("mount", "sys-apps/util-linux");
     gentoo_map.insert("umount", "sys-apps/util-linux");
@@ -449,6 +458,7 @@ pub fn check_required_packages() -> Option<(Vec<String>, String)> {
     nixos_map.insert("mkfs.vfat", "nixos.dosfstools");
     nixos_map.insert("mkfs.ntfs", "nixos.ntfs3g");
     nixos_map.insert("parted", "nixos.parted");
+    nixos_map.insert("sgdisk", "nixos.gptfdisk");
     nixos_map.insert("wipefs", "nixos.util-linux");
     nixos_map.insert("mount", "nixos.util-linux");
     nixos_map.insert("umount", "nixos.util-linux");
