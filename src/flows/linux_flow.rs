@@ -18,6 +18,8 @@ pub fn write_iso_to_usb_with_persistence(
 ) -> io::Result<()> {
     if persistence.is_some() {
         writeln!(log, "[PERSISTENCE] Persistence requested. Will add partition after write.")?;
+    } else {
+        writeln!(log, "[PERSISTENCE] Persistence disabled; skipping extra partition steps.")?;
     }
 
     if let Some(config) = &persistence {
