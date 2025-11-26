@@ -23,6 +23,8 @@ pub struct PersistenceConfig {
     pub persistence_type: PersistenceType,
     /// Label for persistence partition
     pub label: String,
+    /// Desired partition table type (GPT or MBR)
+    pub partition_table: PartitionTableType,
 }
 
 /// Types of persistence support
@@ -36,6 +38,13 @@ pub enum PersistenceType {
     Custom(String),
 }
 
+/// Supported partition table types
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PartitionTableType {
+    Gpt,
+    Mbr,
+}
+
 impl Default for PersistenceConfig {
     fn default() -> Self {
         Self {
@@ -43,6 +52,7 @@ impl Default for PersistenceConfig {
             size_mb: 4096, // 4GB default
             persistence_type: PersistenceType::Casper,
             label: "persistence".to_string(),
+            partition_table: PartitionTableType::Gpt,
         }
     }
 }
@@ -64,6 +74,15 @@ pub fn create_persistence_partition(
     settle_udev();
     thread::sleep(Duration::from_millis(500));
     refresh_partition_table(usb_device)?;
+
+    // Detect existing partition table and ensure it matches requested type
+    let current_table = detect_partition_table_type(usb_device)?;
+    if current_table != config.partition_table {
+        return Err(UsbCreatorError::validation_error(format!(
+            "Requested partition table {:?} but device currently uses {:?}. Select the matching table type for this ISO or recreate the media.",
+            config.partition_table, current_table
+        )));
+    }
 
     // Ensure nothing is mounted from the target device before we repartition
     let previously_mounted = unmount_device_partitions(usb_device)?;
@@ -115,12 +134,16 @@ pub fn create_persistence_partition(
     }
 
     // Set partition flag
-    println!("[PERSISTENCE] Marking partition {} as LBA...", partition_number);
-    if let Err(e) = run_command("parted", &[
-        "-s", usb_device, "set", &partition_number.to_string(), "lba", "on"
-    ]) {
-        println!("[PERSISTENCE] ERROR while setting partition flag: {}", e);
-        return Err(e);
+    if config.partition_table == PartitionTableType::Mbr {
+        println!("[PERSISTENCE] Marking partition {} as LBA (MBR)...", partition_number);
+        if let Err(e) = run_command("parted", &[
+            "-s", usb_device, "set", &partition_number.to_string(), "lba", "on"
+        ]) {
+            println!("[PERSISTENCE] ERROR while setting partition flag: {}", e);
+            return Err(e);
+        }
+    } else {
+        println!("[PERSISTENCE] GPT detected; skipping LBA flag (not applicable).");
     }
 
     println!("[PERSISTENCE] Formatting persistence partition as ext4...");
@@ -206,6 +229,27 @@ fn get_total_sectors(device: &str) -> UsbCreatorResult<u64> {
     Ok(sectors)
 }
 
+/// Detect current partition table type via parted -ms print
+fn detect_partition_table_type(device: &str) -> UsbCreatorResult<PartitionTableType> {
+    let output = run_command_with_output("parted", &["-ms", device, "unit", "s", "print"])?;
+    for line in output.lines() {
+        if line.starts_with("/dev/") {
+            let parts: Vec<&str> = line.split(':').collect();
+            if parts.len() >= 6 {
+                let label = parts[5].to_lowercase();
+                if label.contains("gpt") {
+                    return Ok(PartitionTableType::Gpt);
+                } else if label.contains("msdos") {
+                    return Ok(PartitionTableType::Mbr);
+                }
+            }
+        }
+    }
+    Err(UsbCreatorError::validation_error(
+        "Could not detect partition table type for device",
+    ))
+}
+
 /// Build partition path that works for /dev/sdX and /dev/nvmeXpY devices
 fn build_partition_path(device: &str, partition_number: u32) -> String {
     if device.chars().last().map(|c| c.is_ascii_digit()).unwrap_or(false) {
@@ -277,6 +321,11 @@ fn refresh_partition_table(device: &str) -> UsbCreatorResult<()> {
         match run_command_with_output("parted", &["-ms", device, "unit", "s", "print"]) {
             Ok(_) => return Ok(()),
             Err(e) => {
+                // Ignore common 2048/512 warning as non-fatal and continue
+                if format!("{}", e).contains("physical block size is 2048 bytes, but Linux says it is 512 bytes") {
+                    println!("[PERSISTENCE] Parted reported 2048/512 block-size warning; continuing.");
+                    return Ok(());
+                }
                 println!("[PERSISTENCE] Partition table refresh not yet visible: {}. Retrying...", e);
             }
         }
