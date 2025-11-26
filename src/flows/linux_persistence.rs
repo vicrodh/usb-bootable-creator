@@ -136,6 +136,9 @@ pub fn create_persistence_partition(
         return Err(e);
     }
 
+    // Unmount again in case desktop automount raced after mkpart
+    let _ = unmount_device_partitions(usb_device);
+
     // Ensure kernel sees the new partition node before proceeding
     if let Err(e) = refresh_partition_table(usb_device) {
         println!("[PERSISTENCE] Warning: partition table refresh after mkpart failed: {}", e);
@@ -146,7 +149,23 @@ pub fn create_persistence_partition(
     let _ = Command::new("sync").status();
     settle_udev();
     thread::sleep(Duration::from_millis(500));
-    wait_for_partition_node(&partition_path, usb_device)?;
+    if let Err(e) = wait_for_partition_node(&partition_path, usb_device) {
+        println!("[PERSISTENCE] Partition node still missing after mkpart: {}. Trying sfdisk append fallback (MBR only)...", e);
+        if effective_table == PartitionTableType::Mbr {
+            if let Err(err) = append_partition_with_sfdisk(usb_device, start_sector, end_sector) {
+                println!("[PERSISTENCE] sfdisk append failed: {}", err);
+                return Err(e);
+            }
+            let _ = Command::new("partprobe").arg(usb_device).status();
+            let _ = Command::new("partx").args(["-u", usb_device]).status();
+            let _ = Command::new("blockdev").args(["--rereadpt", usb_device]).status();
+            settle_udev();
+            thread::sleep(Duration::from_millis(600));
+            wait_for_partition_node(&partition_path, usb_device)?;
+        } else {
+            return Err(e);
+        }
+    }
 
     // Set partition flag
     if effective_table == PartitionTableType::Mbr {
@@ -221,11 +240,13 @@ fn find_next_partition_number(device: &str) -> UsbCreatorResult<u32> {
 
 /// Find the next available sector for partition creation
 fn find_next_available_sector(device: &str) -> UsbCreatorResult<u64> {
+    let mut max_sector = 2048; // Start after first MB
+
     // Try parted first
     if let Ok(output) = run_command_with_output("parted", &[
         "-ms", device, "unit", "s", "print"
     ]) {
-        let mut max_sector = 2048; // Start after first MB
+        println!("[PERSISTENCE] Parsing existing partitions from parted output...");
         for line in output.lines() {
             if line.starts_with(|c: char| c.is_ascii_digit()) {
                 let parts: Vec<&str> = line.split(':').collect();
@@ -233,37 +254,42 @@ fn find_next_available_sector(device: &str) -> UsbCreatorResult<u64> {
                     let end_raw = parts[2].trim_end_matches('s');
                     if let Ok(end_sector) = end_raw.parse::<u64>() {
                         max_sector = max_sector.max(end_sector);
+                        println!("[PERSISTENCE] Found partition ending at sector {}", end_sector);
                     }
                 }
             }
         }
-        if max_sector > 2048 {
-            return Ok(align_to_2048(max_sector + 1));
-        }
     }
 
-    // Fallback: use lsblk start+sectors for partitions
+    // Fallback: use lsblk start+sectors for any child entries
     if let Ok(output) = run_command_with_output("lsblk", &["-b", "-n", "-o", "NAME,START,SECTORS,TYPE", device]) {
         let device_name = device.trim_start_matches("/dev/");
-        let mut max_sector = 2048;
         for line in output.lines() {
             let cols: Vec<&str> = line.split_whitespace().collect();
-            if cols.len() >= 4 && cols[3] == "part" {
+            if cols.len() >= 4 {
                 let name = cols[0];
+                // Skip the whole device entry
+                if name == device_name {
+                    continue;
+                }
                 if !name.starts_with(device_name) {
                     continue;
                 }
                 if let (Ok(start), Ok(sectors)) = (cols[1].parse::<u64>(), cols[2].parse::<u64>()) {
                     let end_sector = start.saturating_add(sectors.saturating_sub(1));
                     max_sector = max_sector.max(end_sector);
+                    println!("[PERSISTENCE] lsblk reports {}: start {}, sectors {}, end {}", name, start, sectors, end_sector);
                 }
             }
         }
-        return Ok(align_to_2048(max_sector + 1));
     }
 
-    // Default if nothing parsed
-    Ok(align_to_2048(2049))
+    let next = align_to_2048(max_sector + 1);
+    println!(
+        "[PERSISTENCE] Next available start sector chosen: {} (after max end {})",
+        next, max_sector
+    );
+    Ok(next)
 }
 
 /// Get total sectors of device via blockdev --getsz
@@ -475,6 +501,41 @@ fn settle_udev() {
                 String::from_utf8_lossy(&output.stderr).trim()
             );
         }
+    }
+}
+
+/// Append an MBR partition using sfdisk as fallback when parted/partx fail to expose the node.
+fn append_partition_with_sfdisk(device: &str, start_sector: u64, end_sector: u64) -> UsbCreatorResult<()> {
+    let size_sectors = end_sector.saturating_sub(start_sector).saturating_add(1);
+    let entry = format!("{},{} L\n", start_sector, size_sectors);
+    println!(
+        "[PERSISTENCE] Attempting sfdisk append fallback on {} with entry: {}",
+        device, entry.trim()
+    );
+    let mut child = Command::new("sfdisk")
+        .arg(device)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| UsbCreatorError::Io(e, "Failed to spawn sfdisk".to_string()))?;
+
+    if let Some(stdin) = child.stdin.as_mut() {
+        stdin
+            .write_all(entry.as_bytes())
+            .map_err(|e| UsbCreatorError::Io(e, "Failed to write to sfdisk stdin".to_string()))?;
+    }
+
+    let output = child
+        .wait_with_output()
+        .map_err(|e| UsbCreatorError::Io(e, "Failed to wait for sfdisk".to_string()))?;
+
+    if output.status.success() {
+        println!("[PERSISTENCE] sfdisk append completed.");
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(UsbCreatorError::command_failed("sfdisk", stderr.trim()))
     }
 }
 

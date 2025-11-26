@@ -18,13 +18,11 @@ modules:
       - install -Dm755 rust-usb-bootable-creator /app/bin/rust-usb-bootable-creator
       - install -Dm755 cli_helper /app/bin/cli_helper
       - install -Dm644 assets/icons/icon-128x128.png /app/share/icons/hicolor/128x128/apps/majusb-bootable-creator.png
-      - install -Dm644 majusb-bootable-creator.desktop /app/share/applications/majusb-bootable-creator.desktop
+      - install -Dm644 assets/majusb-flatpak.desktop /app/share/applications/majusb-flatpak.desktop
     sources:
       - type: dir
         path: target/release
         dest: .
       - type: dir
-        path: assets/icons
-        dest: assets/icons
-      - type: file
-        path: majusb-bootable-creator.desktop
+        path: assets
+        dest: assets

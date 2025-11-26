@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.github.vicrodh.MajUSB</id>
+
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+
+  <name>MajUSB Bootable Creator</name>
+  <name xml:lang="es">MajUSB Creador de USB Arrancable</name>
+
+  <summary>Create bootable USB drives for Linux or Windows ISOs</summary>
+  <summary xml:lang="es">Crea USB arrancables para ISOs de Linux o Windows</summary>
+
+  <description>
+    <p>
+      MajUSB is a modern, cross-platform USB bootable drive creator with a GTK4 GUI.
+      It supports both Linux and Windows ISO creation with UEFI/GPT layouts and
+      includes advanced features like custom cluster sizes and persistence support.
+    </p>
+    <p xml:lang="es">
+      MajUSB es un creador de USB arrancables moderno y multiplataforma con GUI GTK4.
+      Soporta la creación de USB arrancables para Linux y Windows con diseños UEFI/GPT
+      e incluye características avanzadas como tamaños de cluster personalizados
+      y soporte de persistencia.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">majusb-bootable-creator.desktop</launchable>
+
+  <provides>
+    <binary>rust-usb-bootable-creator</binary>
+  </provides>
+
+  <url type="homepage">https://github.com/vicrodh/usb-bootable-creator</url>
+  <url type="bugtracker">https://github.com/vicrodh/usb-bootable-creator/issues</url>
+  <url type="source">https://github.com/vicrodh/usb-bootable-creator.git</url>
+
+  <screenshots>
+    <screenshot type="default">
+      <caption>Main interface with ISO and device selection</caption>
+      <image type="source" width="800" height="600">https://raw.githubusercontent.com/vicrodh/usb-bootable-creator/main/assets/screenshot.png</image>
+    </screenshot>
+  </screenshots>
+
+  <releases>
+    <release version="0.2.0-alpha" date="2025-11-25">
+      <description>
+        <p>Alpha release with complete GUI modularization and Flatpak support</p>
+        <p xml:lang="es">Versión alfa con modularización completa de GUI y soporte Flatpak</p>
+      </description>
+    </release>
+  </releases>
+
+  <categories>
+    <category>System</category>
+    <category>Utility</category>
+    <category>FileTools</category>
+  </categories>
+
+  <keywords>
+    <keyword>usb</keyword>
+    <keyword>boot</keyword>
+    <keyword>iso</keyword>
+    <keyword>flash</keyword>
+    <keyword>drive</keyword>
+    <keyword>installer</keyword>
+    <keyword>usb-bootable</keyword>
+    <keyword xml:lang="es">usb</keyword>
+    <keyword xml:lang="es">arrancar</keyword>
+    <keyword xml:lang="es">iso</keyword>
+    <keyword xml:lang="es">flash</keyword>
+    <keyword xml:lang="es">unidad</keyword>
+    <keyword xml:lang="es">instalador</keyword>
+    <keyword xml:lang="es">usb-arrancable</keyword>
+  </keywords>
+
+  <content_rating type="oars-1.1"/>
+
+  <developer_name>Vic RH</developer_name>
+  <developer_name xml:lang="es">Vic RH</developer_name>
+
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+  </supports>
+
+  <requires>
+    <display_length compare="ge">360</display_length>
+  </requires>
+
+  <recommends>
+    <memory>512</memory>
+    <internet>offline-only</internet>
+  </recommends>
+</component>

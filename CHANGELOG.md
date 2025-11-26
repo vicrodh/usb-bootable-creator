@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Linux persistence robustness**
   - Requires `sgdisk`/gptfdisk for GPT repair after ISO write
   - Refresh loop with `partprobe`/`udevadm settle` and free-space validation before creating the persistence partition
+  - Calculates persistence start after existing partitions (parted/lsblk), aligns to 2048-sector boundary, and retries rereads (partprobe/partx/rereadpt/hdparm) with sfdisk fallback on MBR hybrids
 - **Partition table choice**
   - Advanced option to select GPT (default) or MBR for persistence; backend validates against the current device table
 - **Development guidelines in CLAUDE.md**

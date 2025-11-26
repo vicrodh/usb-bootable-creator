@@ -1,7 +1,17 @@
 // Widget creation functions (ISO selection, device selection, etc.)
 
 use gtk4::prelude::*;
-use gtk4::{ApplicationWindow, Button, ComboBoxText, Entry, FileChooserAction, FileChooserDialog, FileFilter, Orientation, Box as GtkBox, Label, ScrolledWindow, TextView, ProgressBar};
+use gtk4::{Button, ComboBoxText, Entry, Orientation, Box as GtkBox, Label, ScrolledWindow, TextView, ProgressBar, CheckButton};
+
+/// Create main vertical box for the application
+pub fn create_main_container() -> GtkBox {
+    let vbox = GtkBox::new(Orientation::Vertical, 12);
+    vbox.set_margin_top(16);
+    vbox.set_margin_bottom(16);
+    vbox.set_margin_start(16);
+    vbox.set_margin_end(16);
+    vbox
+}
 
 /// Create ISO selection widget (label + entry + browse button)
 pub fn create_iso_selection_widget() -> (GtkBox, Entry, Button) {
@@ -29,12 +39,22 @@ pub fn create_iso_selection_widget() -> (GtkBox, Entry, Button) {
     iso_hbox.append(&iso_label);
     iso_hbox.append(&iso_entry);
     iso_hbox.append(&iso_button);
-    iso_hbox.set_homogeneous(false);
-    iso_hbox.set_spacing(8);
-    iso_hbox.set_size_request(0, 0);
-    iso_entry.set_width_chars(40);
 
     (iso_hbox, iso_entry, iso_button)
+}
+
+/// Create OS detection label
+pub fn create_os_label() -> Label {
+    Label::new(None)
+}
+
+/// Create separator widget
+pub fn create_separator() -> gtk4::Separator {
+    let sep = gtk4::Separator::new(Orientation::Horizontal);
+    sep.set_halign(gtk4::Align::Center);
+    sep.set_hexpand(true);
+    sep.set_width_request((720.0 * 0.8) as i32);
+    sep
 }
 
 /// Create device selection widget (label + combo + refresh button)
@@ -62,29 +82,30 @@ pub fn create_device_selection_widget() -> (GtkBox, ComboBoxText, Button) {
     device_hbox.append(&device_label);
     device_hbox.append(&device_combo);
     device_hbox.append(&refresh_button);
-    device_hbox.set_homogeneous(false);
-    device_hbox.set_spacing(8);
 
     (device_hbox, device_combo, refresh_button)
 }
 
-/// Create separator widget
-pub fn create_separator() -> gtk4::Separator {
-    let sep = gtk4::Separator::new(Orientation::Horizontal);
-    sep.set_halign(gtk4::Align::Center);
-    sep.set_hexpand(true);
-    sep.set_width_request((720.0 * 0.8) as i32);
-    sep
-}
+/// Create Windows advanced options with title bar and cluster size selection
+pub fn create_windows_advanced_options() -> (GtkBox, ComboBoxText) {
+    let windows_group = GtkBox::new(Orientation::Vertical, 8);
+    windows_group.set_visible(false);
 
-/// Create OS detection label
-pub fn create_os_label() -> Label {
-    Label::new(None)
-}
+    // Advanced options title as a horizontal bar
+    let windows_title_bar = GtkBox::new(Orientation::Horizontal, 4);
+    let left_sep = gtk4::Separator::new(Orientation::Horizontal);
+    left_sep.set_hexpand(true);
+    let adv_label = Label::new(Some("Advanced options"));
+    adv_label.set_halign(gtk4::Align::Center);
+    adv_label.set_markup("<b>Advanced options</b>");
+    let right_sep = gtk4::Separator::new(Orientation::Horizontal);
+    right_sep.set_hexpand(true);
+    windows_title_bar.append(&left_sep);
+    windows_title_bar.append(&adv_label);
+    windows_title_bar.append(&right_sep);
+    windows_group.append(&windows_title_bar);
 
-/// Create advanced options section (cluster size for Windows)
-pub fn create_windows_advanced_options() -> GtkBox {
-    let windows_group = GtkBox::new(Orientation::Vertical, 6);
+    let cluster_label = Label::new(Some("Cluster Size:"));
     let cluster_sizes = vec![
         ("512 bytes", 512),
         ("1K", 1024),
@@ -99,35 +120,59 @@ pub fn create_windows_advanced_options() -> GtkBox {
     for (label, _val) in &cluster_sizes {
         cluster_combo.append_text(label);
     }
-    cluster_combo.set_active(Some(3)); // Default to 4K
-
-    windows_group.append(&Label::new(Some("Cluster Size:")));
+    cluster_combo.set_active(Some(3)); // Default to 4K (4096 bytes)
+    windows_group.append(&cluster_label);
     windows_group.append(&cluster_combo);
 
-    // Store cluster sizes as attached data for later use
-    let cluster_sizes_vec: Vec<(String, u64)> = cluster_sizes.iter()
-        .map(|(label, val)| (label.to_string(), *val))
-        .collect();
-    unsafe { cluster_combo.set_data::<Vec<(String, u64)>>("cluster_sizes", cluster_sizes_vec); }
-
-    windows_group
+    (windows_group, cluster_combo)
 }
 
-/// Create advanced options section (persistence for Linux)
-pub fn create_linux_advanced_options() -> GtkBox {
-    let linux_group = GtkBox::new(Orientation::Vertical, 6);
-    let persistence_checkbox = gtk4::CheckButton::builder()
+/// Create Linux advanced options with title bar, persistence checkbox, and partition table type
+pub fn create_linux_advanced_options() -> (GtkBox, CheckButton, ComboBoxText) {
+    let linux_group = GtkBox::new(Orientation::Vertical, 8);
+    linux_group.set_visible(false);
+
+    // Advanced options title as a horizontal bar (reuse for Linux)
+    let linux_title_bar = GtkBox::new(Orientation::Horizontal, 4);
+    let left_sep2 = gtk4::Separator::new(Orientation::Horizontal);
+    left_sep2.set_hexpand(true);
+    let adv_label2 = Label::new(Some("Advanced options"));
+    adv_label2.set_halign(gtk4::Align::Center);
+    adv_label2.set_markup("<b>Advanced options</b>");
+    let right_sep2 = gtk4::Separator::new(Orientation::Horizontal);
+    right_sep2.set_hexpand(true);
+    linux_title_bar.append(&left_sep2);
+    linux_title_bar.append(&adv_label2);
+    linux_title_bar.append(&right_sep2);
+    linux_group.append(&linux_title_bar);
+
+    let persistence_checkbox = CheckButton::builder()
         .label("Enable persistence (store changes)")
         .build();
-    linux_group.append(&Label::new(Some("Linux Options:")));
     linux_group.append(&persistence_checkbox);
 
-    linux_group
+    // Partition table type selector
+    let table_type_combo = ComboBoxText::new();
+    table_type_combo.append_text("GPT (default)");
+    table_type_combo.append_text("MBR (msdos)");
+    table_type_combo.set_active(Some(0));
+    let table_type_label = Label::new(Some("Partition table type (persistence):"));
+    linux_group.append(&table_type_label);
+    linux_group.append(&table_type_combo);
+
+    (linux_group, persistence_checkbox, table_type_combo)
 }
 
-/// Create write button
-pub fn create_write_button() -> Button {
-    Button::with_label("Write to USB")
+/// Create button container with write and advanced buttons
+pub fn create_button_container() -> (GtkBox, Button, Button) {
+    let button_hbox = GtkBox::new(Orientation::Horizontal, 8);
+    button_hbox.set_halign(gtk4::Align::Center);
+    let write_button = Button::with_label("Write to USB");
+    let advanced_button = Button::with_label("Advanced options");
+    button_hbox.append(&write_button);
+    button_hbox.append(&advanced_button);
+
+    (button_hbox, write_button, advanced_button)
 }
 
 /// Create log area with scrolled window
@@ -139,16 +184,12 @@ pub fn create_log_area() -> (Label, TextView, ScrolledWindow) {
     log_view.set_monospace(true);
     log_view.set_vexpand(true);
     log_view.set_hexpand(true);
-    log_view.set_margin_top(4);
-    log_view.set_margin_bottom(4);
-    log_view.set_margin_start(4);
-    log_view.set_margin_end(4);
-    log_view.set_justification(gtk4::Justification::Left);
-    log_view.set_cursor_visible(false);
-    log_view.set_left_margin(10);
-    log_view.set_right_margin(10);
     log_view.set_top_margin(4);
     log_view.set_bottom_margin(4);
+    log_view.set_left_margin(10);
+    log_view.set_right_margin(10);
+    log_view.set_justification(gtk4::Justification::Left);
+    log_view.set_cursor_visible(false);
     let log_scroll = ScrolledWindow::builder().min_content_height(100).child(&log_view).build();
 
     (log_label, log_view, log_scroll)
@@ -160,9 +201,4 @@ pub fn create_progress_bar() -> ProgressBar {
     progress_bar.set_show_text(false);
     progress_bar.set_fraction(0.0);
     progress_bar
-}
-
-/// Create advanced options toggle button
-pub fn create_advanced_button() -> Button {
-    Button::with_label("Advanced Options ▼")
 }
