@@ -649,6 +649,7 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
                         // UI receiver to update progress/log without blocking
                         {
                             let buffer_ui = log_view_clone.buffer();
+                            let log_view_ui = log_view_clone.clone();
                             let progress_ui = progress_bar_clone.clone();
                             let write_button_ui = write_button_clone.clone();
                             receiver.attach(None, move |msg| {
@@ -662,6 +663,8 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
                                             text.push('\n');
                                         }
                                         buffer_ui.set_text(&text);
+                                        let mut end_iter = buffer_ui.end_iter();
+                                        log_view_ui.scroll_to_iter(&mut end_iter, 0.0, true, 0.0, 1.0);
                                     }
                                     WorkerMessage::Status(status) => {
                                         progress_ui.set_text(Some(&status));
@@ -694,6 +697,8 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
                                         }
 
                                         buffer_ui.set_text(&text);
+                                        let mut end_iter = buffer_ui.end_iter();
+                                        log_view_ui.scroll_to_iter(&mut end_iter, 0.0, true, 0.0, 1.0);
                                     }
                                 }
                                 glib::ControlFlow::Continue

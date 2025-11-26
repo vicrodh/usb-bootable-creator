@@ -236,23 +236,46 @@ fn get_total_sectors(device: &str) -> UsbCreatorResult<u64> {
 
 /// Detect current partition table type via parted -ms print
 fn detect_partition_table_type(device: &str) -> UsbCreatorResult<PartitionTableType> {
-    let output = run_command_with_output("parted", &["-ms", device, "unit", "s", "print"])?;
-    for line in output.lines() {
-        if line.starts_with("/dev/") {
-            let parts: Vec<&str> = line.split(':').collect();
-            if parts.len() >= 6 {
-                let label = parts[5].to_lowercase();
-                if label.contains("gpt") {
-                    return Ok(PartitionTableType::Gpt);
-                } else if label.contains("msdos") {
-                    return Ok(PartitionTableType::Mbr);
+    // Try parted first
+    if let Ok(output) = run_command_with_output("parted", &["-ms", device, "unit", "s", "print"]) {
+        for line in output.lines() {
+            if line.starts_with("/dev/") {
+                let parts: Vec<&str> = line.split(':').collect();
+                if parts.len() >= 6 {
+                    let label = parts[5].to_lowercase();
+                    if label.contains("gpt") {
+                        return Ok(PartitionTableType::Gpt);
+                    } else if label.contains("msdos") {
+                        return Ok(PartitionTableType::Mbr);
+                    }
                 }
             }
         }
     }
-    Err(UsbCreatorError::validation_error(
-        "Could not detect partition table type for device",
-    ))
+
+    // Fallback: lsblk PTTYPE
+    if let Ok(output) = run_command_with_output("lsblk", &["-dn", "-o", "PTTYPE", device]) {
+        let pttype = output.trim().to_lowercase();
+        if pttype.contains("gpt") {
+            return Ok(PartitionTableType::Gpt);
+        } else if pttype.contains("dos") || pttype.contains("msdos") || pttype.contains("mbr") {
+            return Ok(PartitionTableType::Mbr);
+        }
+    }
+
+    // Fallback: blkid PTTYPE
+    if let Ok(output) = run_command_with_output("blkid", &["-s", "PTTYPE", "-o", "value", device]) {
+        let pttype = output.trim().to_lowercase();
+        if pttype.contains("gpt") {
+            return Ok(PartitionTableType::Gpt);
+        } else if pttype.contains("dos") || pttype.contains("msdos") || pttype.contains("mbr") {
+            return Ok(PartitionTableType::Mbr);
+        }
+    }
+
+    // Default to GPT but warn
+    println!("[PERSISTENCE] Could not detect partition table type; defaulting to GPT.");
+    Ok(PartitionTableType::Gpt)
 }
 
 /// Build partition path that works for /dev/sdX and /dev/nvmeXpY devices
