@@ -3,6 +3,7 @@
 use crate::error::{UsbCreatorError, UsbCreatorResult};
 use scopeguard;
 use std::fs;
+use std::io::Write;
 use std::process::Command;
 use std::thread;
 use std::time::Duration;
@@ -300,7 +301,13 @@ fn maybe_expand_gpt(device: &str) -> UsbCreatorResult<()> {
             }
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            println!("[PERSISTENCE] sgdisk not found; skipping GPT expansion.");
+            println!("[PERSISTENCE] sgdisk not found; attempting parted-based GPT fix...");
+            if let Err(err) = fix_gpt_with_parted(device) {
+                println!(
+                    "[PERSISTENCE] Warning: could not fix GPT with parted: {}. Continuing.",
+                    err
+                );
+            }
         }
         Err(e) => {
             return Err(UsbCreatorError::Io(
@@ -310,6 +317,33 @@ fn maybe_expand_gpt(device: &str) -> UsbCreatorResult<()> {
         }
     }
     Ok(())
+}
+
+/// Attempt to fix GPT using parted by auto-answering the prompt to use all space.
+fn fix_gpt_with_parted(device: &str) -> UsbCreatorResult<()> {
+    let mut cmd = Command::new("parted");
+    cmd.args(["--script", "--pretend-input-tty", device, "print"]);
+    cmd.stdin(std::process::Stdio::piped());
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| UsbCreatorError::Io(e, "Failed to spawn parted for GPT fix".to_string()))?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        // Answer "Fix" to the prompt and confirm with "Yes"
+        let _ = stdin.write_all(b"Fix\nYes\n");
+    }
+
+    let output = child
+        .wait_with_output()
+        .map_err(|e| UsbCreatorError::Io(e, "Failed to wait for parted GPT fix".to_string()))?;
+
+    if output.status.success() {
+        println!("[PERSISTENCE] GPT fix via parted completed.");
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(UsbCreatorError::command_failed("parted GPT fix", stderr.trim()))
+    }
 }
 
 /// Best-effort udev settle to avoid racing kernel partition table updates
