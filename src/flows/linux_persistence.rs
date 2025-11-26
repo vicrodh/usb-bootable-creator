@@ -54,13 +54,20 @@ pub fn create_persistence_partition(
 
     println!("[PERSISTENCE] Creating {}MB persistence partition...", config.size_mb);
 
+    // Ensure kernel has flushed caches and re-read partition table after dd
+    let _ = Command::new("sync").status();
+    let _ = Command::new("partprobe").arg(usb_device).status();
+    settle_udev();
+    thread::sleep(Duration::from_millis(500));
+
     // Ensure nothing is mounted from the target device before we repartition
     let previously_mounted = unmount_device_partitions(usb_device)?;
+    // Keep remount best-effort but do not let it mask failures; only if we actually unmounted something
     let _remount_guard = scopeguard::guard(previously_mounted, |mounts: Vec<(String, String)>| {
         if mounts.is_empty() {
             return;
         }
-        println!("[PERSISTENCE] Remounting previously mounted partitions...");
+        println!("[PERSISTENCE] Remounting previously mounted partitions (best effort)...");
         for (dev, mp) in mounts {
             println!("[PERSISTENCE] Remounting {} to {}", dev, mp);
             let _ = Command::new("mount").args([dev.as_str(), mp.as_str()]).status();
@@ -71,6 +78,7 @@ pub fn create_persistence_partition(
     maybe_expand_gpt(usb_device)?;
     let _ = run_command("partprobe", &[usb_device]);
     settle_udev();
+    thread::sleep(Duration::from_millis(500));
 
     // Find the next available partition number
     let partition_number = find_next_partition_number(usb_device)?;
@@ -79,6 +87,12 @@ pub fn create_persistence_partition(
     // Calculate partition start (we need to find where the existing partitions end)
     let start_sector = find_next_available_sector(usb_device)?;
     let end_sector = start_sector + (config.size_mb * 2048).saturating_sub(1); // 512-byte sectors
+
+    // One more settle before creating the partition to avoid racing table updates
+    let _ = Command::new("sync").status();
+    let _ = run_command("partprobe", &[usb_device]);
+    settle_udev();
+    thread::sleep(Duration::from_millis(300));
 
     println!("[PERSISTENCE] Creating new partition {} ({}s-{}s)...", partition_number, start_sector, end_sector);
 
@@ -110,6 +124,11 @@ pub fn create_persistence_partition(
         println!("[PERSISTENCE] ERROR while formatting persistence partition: {}", e);
         return Err(e);
     }
+
+    // Final settle to make the new partition visible
+    let _ = Command::new("sync").status();
+    let _ = run_command("partprobe", &[usb_device]);
+    settle_udev();
 
     println!("[PERSISTENCE] Setting up persistence configuration...");
 
