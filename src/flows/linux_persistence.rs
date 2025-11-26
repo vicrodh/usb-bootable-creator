@@ -4,6 +4,8 @@ use crate::error::{UsbCreatorError, UsbCreatorResult};
 use scopeguard;
 use std::fs;
 use std::process::Command;
+use std::thread;
+use std::time::Duration;
 use tempfile;
 
 /// Configuration for Linux persistence
@@ -53,7 +55,17 @@ pub fn create_persistence_partition(
     println!("[PERSISTENCE] Creating {}MB persistence partition...", config.size_mb);
 
     // Ensure nothing is mounted from the target device before we repartition
-    unmount_device_partitions(usb_device)?;
+    let previously_mounted = unmount_device_partitions(usb_device)?;
+    let _remount_guard = scopeguard::guard(previously_mounted, |mounts: Vec<(String, String)>| {
+        if mounts.is_empty() {
+            return;
+        }
+        println!("[PERSISTENCE] Remounting previously mounted partitions...");
+        for (dev, mp) in mounts {
+            println!("[PERSISTENCE] Remounting {} to {}", dev, mp);
+            let _ = Command::new("mount").args([dev.as_str(), mp.as_str()]).status();
+        }
+    });
 
     // For GPT-based ISOs, expand the secondary GPT to the end of the device so new partitions fit
     maybe_expand_gpt(usb_device)?;
@@ -71,24 +83,33 @@ pub fn create_persistence_partition(
     println!("[PERSISTENCE] Creating new partition {} ({}s-{}s)...", partition_number, start_sector, end_sector);
 
     // Create new partition
-    run_command("parted", &[
+    if let Err(e) = run_command("parted", &[
         "-s", usb_device, "mkpart", "primary",
         &format!("{}s", start_sector),
         &format!("{}s", end_sector)
-    ])?;
+    ]) {
+        println!("[PERSISTENCE] ERROR while creating partition: {}", e);
+        return Err(e);
+    }
 
     // Set partition flag
     println!("[PERSISTENCE] Marking partition {} as LBA...", partition_number);
-    run_command("parted", &[
+    if let Err(e) = run_command("parted", &[
         "-s", usb_device, "set", &partition_number.to_string(), "lba", "on"
-    ])?;
+    ]) {
+        println!("[PERSISTENCE] ERROR while setting partition flag: {}", e);
+        return Err(e);
+    }
 
     println!("[PERSISTENCE] Formatting persistence partition as ext4...");
-    run_command("mkfs.ext4", &[
+    if let Err(e) = run_command("mkfs.ext4", &[
         "-L", &config.label,
         "-F",  // Force creation
         &partition_path
-    ])?;
+    ]) {
+        println!("[PERSISTENCE] ERROR while formatting persistence partition: {}", e);
+        return Err(e);
+    }
 
     println!("[PERSISTENCE] Setting up persistence configuration...");
 
@@ -160,11 +181,13 @@ fn build_partition_path(device: &str, partition_number: u32) -> String {
     }
 }
 
-/// Unmount any mounted partitions from the target device to avoid busy errors
-fn unmount_device_partitions(device: &str) -> UsbCreatorResult<()> {
+/// Unmount any mounted partitions from the target device to avoid busy errors.
+/// Returns the list of (device, mountpoint) that were unmounted so they can be restored.
+fn unmount_device_partitions(device: &str) -> UsbCreatorResult<Vec<(String, String)>> {
     println!("[PERSISTENCE] Checking for mounted partitions on {}...", device);
     let output = run_command_with_output("lsblk", &["-ln", "-o", "NAME,MOUNTPOINT", device])?;
     let mut unmounted = false;
+    let mut mounts: Vec<(String, String)> = Vec::new();
     for line in output.lines() {
         let mut parts = line.split_whitespace();
         let name = parts.next().unwrap_or_default();
@@ -174,12 +197,16 @@ fn unmount_device_partitions(device: &str) -> UsbCreatorResult<()> {
             println!("[PERSISTENCE] Unmounting {} from {}", dev_path, mp);
             let _ = run_command("umount", &[mp]);
             unmounted = true;
+            mounts.push((dev_path, mp.to_string()));
         }
     }
     if !unmounted {
         println!("[PERSISTENCE] No mounted partitions detected on {}.", device);
     }
-    Ok(())
+    // Give the kernel/udev a moment to release the device
+    settle_udev();
+    thread::sleep(Duration::from_millis(200));
+    Ok(mounts)
 }
 
 /// Try to relocate the GPT backup header to the end of the device (best effort).
