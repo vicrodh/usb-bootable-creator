@@ -122,9 +122,6 @@ CLAUDE.md
 HANDOFF_STATE.md
 PLAN.md
 Qt6_MIGRATION_ANALYSIS.md
-src/config.rs
-src/error.rs
-src/flows/linux_persistence.rs
 
 # Reference branches (untracked)
 main-reference/
