@@ -99,12 +99,14 @@ pub fn create_persistence_partition(
         }
     });
 
-    // For GPT-based ISOs, expand the secondary GPT to the end of the device so new partitions fit
-    maybe_expand_gpt(usb_device)?;
-    let _ = run_command("partprobe", &[usb_device]);
-    settle_udev();
-    thread::sleep(Duration::from_millis(500));
-    refresh_partition_table(usb_device)?;
+    // For GPT-based layouts, expand GPT to the end of the device
+    if effective_table == PartitionTableType::Gpt {
+        maybe_expand_gpt(usb_device)?;
+        let _ = run_command("partprobe", &[usb_device]);
+        settle_udev();
+        thread::sleep(Duration::from_millis(500));
+        refresh_partition_table(usb_device)?;
+    }
 
     // Find the next available partition number
     let partition_number = find_next_partition_number(usb_device)?;
@@ -139,10 +141,12 @@ pub fn create_persistence_partition(
         println!("[PERSISTENCE] Warning: partition table refresh after mkpart failed: {}", e);
     }
     let _ = Command::new("partx").args(["-u", usb_device]).status();
+    let _ = Command::new("blockdev").args(["--rereadpt", usb_device]).status();
+    let _ = Command::new("hdparm").args(["-z", usb_device]).status();
     let _ = Command::new("sync").status();
     settle_udev();
     thread::sleep(Duration::from_millis(500));
-    wait_for_partition_node(&partition_path)?;
+    wait_for_partition_node(&partition_path, usb_device)?;
 
     // Set partition flag
     if effective_table == PartitionTableType::Mbr {
@@ -217,25 +221,49 @@ fn find_next_partition_number(device: &str) -> UsbCreatorResult<u32> {
 
 /// Find the next available sector for partition creation
 fn find_next_available_sector(device: &str) -> UsbCreatorResult<u64> {
-    let output = run_command_with_output("parted", &[
+    // Try parted first
+    if let Ok(output) = run_command_with_output("parted", &[
         "-ms", device, "unit", "s", "print"
-    ])?;
+    ]) {
+        let mut max_sector = 2048; // Start after first MB
+        for line in output.lines() {
+            if line.starts_with(|c: char| c.is_ascii_digit()) {
+                let parts: Vec<&str> = line.split(':').collect();
+                if parts.len() >= 3 {
+                    let end_raw = parts[2].trim_end_matches('s');
+                    if let Ok(end_sector) = end_raw.parse::<u64>() {
+                        max_sector = max_sector.max(end_sector);
+                    }
+                }
+            }
+        }
+        if max_sector > 2048 {
+            return Ok(align_to_2048(max_sector + 1));
+        }
+    }
 
-    let mut max_sector = 2048; // Start after first MB
-
-    for line in output.lines() {
-        if line.starts_with(|c: char| c.is_ascii_digit()) {
-            let parts: Vec<&str> = line.split(':').collect();
-            if parts.len() >= 3 {
-                let end_raw = parts[2].trim_end_matches('s');
-                if let Ok(end_sector) = end_raw.parse::<u64>() {
+    // Fallback: use lsblk start+sectors for partitions
+    if let Ok(output) = run_command_with_output("lsblk", &["-b", "-n", "-o", "NAME,START,SECTORS,TYPE", device]) {
+        let device_name = device.trim_start_matches("/dev/");
+        let mut max_sector = 2048;
+        for line in output.lines() {
+            let cols: Vec<&str> = line.split_whitespace().collect();
+            if cols.len() >= 4 && cols[3] == "part" {
+                let name = cols[0];
+                if !name.starts_with(device_name) {
+                    continue;
+                }
+                if let (Ok(start), Ok(sectors)) = (cols[1].parse::<u64>(), cols[2].parse::<u64>()) {
+                    let end_sector = start.saturating_add(sectors.saturating_sub(1));
                     max_sector = max_sector.max(end_sector);
                 }
             }
         }
+        return Ok(align_to_2048(max_sector + 1));
     }
 
-    Ok(max_sector + 1) // Start from next sector
+    // Default if nothing parsed
+    Ok(align_to_2048(2049))
 }
 
 /// Get total sectors of device via blockdev --getsz
@@ -243,6 +271,11 @@ fn get_total_sectors(device: &str) -> UsbCreatorResult<u64> {
     let output = run_command_with_output("blockdev", &["--getsz", device])?;
     let sectors = output.trim().parse::<u64>()?;
     Ok(sectors)
+}
+
+fn align_to_2048(sector: u64) -> u64 {
+    let align = 2048;
+    ((sector + align - 1) / align) * align
 }
 
 /// Detect current partition table type via parted -ms print
@@ -285,8 +318,8 @@ fn detect_partition_table_type(device: &str) -> UsbCreatorResult<PartitionTableT
     }
 
     // Default to GPT but warn
-    println!("[PERSISTENCE] Could not detect partition table type; defaulting to GPT.");
-    Ok(PartitionTableType::Gpt)
+    println!("[PERSISTENCE] Could not detect partition table type; defaulting to MBR for hybrid ISOs.");
+    Ok(PartitionTableType::Mbr)
 }
 
 /// Build partition path that works for /dev/sdX and /dev/nvmeXpY devices
@@ -375,17 +408,21 @@ fn refresh_partition_table(device: &str) -> UsbCreatorResult<()> {
 }
 
 /// Wait for partition node to appear after mkpart
-fn wait_for_partition_node(partition_path: &str) -> UsbCreatorResult<()> {
-    for attempt in 1..=TABLE_REFRESH_ATTEMPTS * 2 {
+fn wait_for_partition_node(partition_path: &str, device: &str) -> UsbCreatorResult<()> {
+    for attempt in 1..=TABLE_REFRESH_ATTEMPTS * 3 {
         if std::path::Path::new(partition_path).exists() {
             return Ok(());
         }
         println!(
             "[PERSISTENCE] Waiting for {} to appear (attempt {}/{})...",
-            partition_path, attempt, TABLE_REFRESH_ATTEMPTS * 2
+            partition_path, attempt, TABLE_REFRESH_ATTEMPTS * 3
         );
+        let _ = Command::new("partprobe").arg(device).status();
+        let _ = Command::new("partx").args(["-u", device]).status();
+        let _ = Command::new("blockdev").args(["--rereadpt", device]).status();
+        let _ = Command::new("hdparm").args(["-z", device]).status();
         settle_udev();
-        thread::sleep(Duration::from_millis(500));
+        thread::sleep(Duration::from_millis(600));
     }
     Err(UsbCreatorError::validation_error(format!(
         "Partition node {} did not appear after creation",
