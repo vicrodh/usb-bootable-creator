@@ -14,6 +14,15 @@ pub fn is_root() -> bool {
     unsafe { libc::geteuid() == 0 }
 }
 
+/// Utility: Check if running inside Flatpak
+pub fn is_flatpak() -> bool {
+    // Check for the Flatpak info file
+    std::path::Path::new("/.flatpak-info").exists() ||
+    // Check for Flatpak environment variables
+    std::env::var("FLATPAK_ID").is_ok() ||
+    std::env::var("FLATPAK_SANDBOX_DIR").is_ok()
+}
+
 /// Utility: Get the original user's home directory
 pub fn get_user_home() -> String {
     // Try to get the original home directory preserved during elevation
@@ -83,9 +92,52 @@ pub fn apply_user_theme() {
     }
 }
 
-/// Utility: Relaunch with pkexec if not root
-pub fn ensure_root() {
-    if !is_root() {
+/// Utility: Check if root permissions are needed and how to handle
+pub fn check_root_requirements() -> (bool, bool) {
+    let needs_root = !is_root();
+    let is_flatpak_env = is_flatpak();
+    (needs_root, is_flatpak_env)
+}
+
+/// Utility: Show Flatpak-specific permission request dialog (call after GTK init)
+pub fn show_flatpak_permission_dialog() {
+    use gtk4::prelude::*;
+    use gtk4::{MessageDialog, ButtonsType, MessageType, ResponseType, Window};
+
+    // Create a simple temporary window as parent
+    let temp_window = Window::builder()
+        .title("MajUSB")
+        .default_width(400)
+        .default_height(200)
+        .build();
+
+    let dialog = MessageDialog::builder()
+        .text("Root Permissions Required")
+        .secondary_text(
+            "This application needs root access to manage USB devices.\n\n\
+            When running in Flatpak, please use:\n\
+            flatpak-spawn --host pkexec flatpak run com.github.vicrodh.MajUSB\n\n\
+            Or launch from terminal with the above command."
+        )
+        .buttons(ButtonsType::Ok)
+        .message_type(MessageType::Warning)
+        .modal(true)
+        .transient_for(&temp_window)
+        .build();
+
+    dialog.set_default_response(ResponseType::Ok);
+
+    dialog.connect_response(move |dialog, _| {
+        dialog.close();
+    });
+
+    temp_window.show();
+    dialog.show();
+}
+
+/// Utility: Relaunch with pkexec if not root (normal execution only)
+pub fn ensure_root_normal() {
+    if !is_root() && !is_flatpak() {
         let exe = std::env::current_exe().unwrap();
         let args: Vec<String> = std::env::args().skip(1).collect();
 
@@ -147,6 +199,11 @@ pub fn ensure_root() {
         let _ = cmd.status();
         std::process::exit(0);
     }
+}
+
+/// Legacy function for compatibility
+pub fn ensure_root() {
+    ensure_root_normal();
 }
 
 /// Utility: List block devices (USB drives)

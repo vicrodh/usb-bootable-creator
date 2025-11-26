@@ -1,6 +1,6 @@
 [package]
 name = "rust-usb-bootable-creator"
-version = "0.1.0"
+version = "0.2.0-alpha"
 edition = "2024"
 authors = ["Vic RH <blitzkriegfc@gmail.com>"]
 license = "MIT"
@@ -15,6 +15,7 @@ gtk4 = "0.9.6"
 glib = "0.18"
 which = "4.4"
 gio = "0.20.11"
+scopeguard = "1.2"
 
 [lib]
 name = "rust_usb_bootable_creator"

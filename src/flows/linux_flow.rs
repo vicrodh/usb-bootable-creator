@@ -1,11 +1,25 @@
-use std::process::Command;
+use crate::error::UsbCreatorError;
+use crate::flows::linux_persistence::{create_persistence_partition, validate_persistence_config, PersistenceConfig};
 use std::io::{self, Write};
-use std::fs;
-use tempfile::tempdir_in;
+use std::process::Command;
 
 
 /// Write the ISO file to the USB device using dd (requires root)
 pub fn write_iso_to_usb(iso_path: &str, usb_device: &str, log: &mut dyn Write) -> io::Result<()> {
+    write_iso_to_usb_with_persistence(iso_path, usb_device, log, None)
+}
+
+/// Write the ISO file to the USB device using dd with optional persistence creation
+pub fn write_iso_to_usb_with_persistence(
+    iso_path: &str,
+    usb_device: &str,
+    log: &mut dyn Write,
+    persistence: Option<PersistenceConfig>,
+) -> io::Result<()> {
+    if let Some(config) = &persistence {
+        validate_persistence_config(config).map_err(to_io_error)?;
+    }
+
     let status = Command::new("dd")
         .arg(format!("if={}", iso_path))
         .arg(format!("of={}", usb_device))
@@ -16,6 +30,9 @@ pub fn write_iso_to_usb(iso_path: &str, usb_device: &str, log: &mut dyn Write) -
 
     if status.success() {
         writeln!(log, "ISO written successfully to {}", usb_device)?;
+        if let Some(config) = persistence {
+            create_persistence_partition(usb_device, &config).map_err(to_io_error)?;
+        }
         Ok(())
     } else {
         writeln!(log, "Failed to write ISO to {}", usb_device)?;
@@ -32,6 +49,10 @@ fn print_step(step: usize, total: usize, msg: &str) {
 fn print_error(step: usize, total: usize, msg: &str) {
     println!("[ERROR] {}/{}: {}", step, total, msg);
     std::io::stdout().flush().ok();
+}
+
+fn to_io_error(err: UsbCreatorError) -> io::Error {
+    io::Error::new(io::ErrorKind::Other, err.to_string())
 }
 
 

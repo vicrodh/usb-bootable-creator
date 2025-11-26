@@ -1,8 +1,15 @@
 use gtk4::prelude::*;
-use gtk4::{Application, ApplicationWindow, Button, ComboBoxText, Entry, FileChooserAction, FileChooserDialog, FileFilter, Orientation, Box as GtkBox, Label, ScrolledWindow, TextView, ProgressBar};
-use glib;
-use std::process::{Command, Stdio};
-use std::io::{self, BufRead, BufReader};
+use gtk4::{Application, ApplicationWindow, Button, ComboBoxText, Entry, FileChooserAction, FileChooserDialog, FileFilter, Orientation, Box as GtkBox, Label, ScrolledWindow, TextView, ProgressBar, MessageDialog, ButtonsType, MessageType, ResponseType};
+use glib::{self, Priority};
+use std::io;
+
+use crate::flows::linux_persistence::{self, PersistenceConfig};
+
+enum WorkerMessage {
+    Log(String),
+    Status(String),
+    Done(Result<(), String>),
+}
 
 /// Write Linux ISO (use original working version)
 fn write_linux_iso_with_progress(iso_path: &str, usb_device: &str, _log_view: &TextView, _progress_bar: &ProgressBar) -> io::Result<()> {
@@ -34,15 +41,15 @@ fn format_bytes(bytes: u64) -> String {
     }
 }
 
-pub fn run_gui() {
+pub fn run_gui(needs_root: bool, is_flatpak: bool) {
     // Apply user's visual theme settings before creating GUI
     crate::utils::apply_user_theme();
 
     let app = Application::builder()
-        .application_id("com.example.usbbootablecreator")
+        .application_id("com.github.vicrodh.MajUSB")
         .build();
 
-    app.connect_activate(|app| {
+    app.connect_activate(move |app| {
         // Check for required packages before showing the main window
         if let Some((_, install_cmd)) = crate::utils::check_required_packages() {
             let dialog = gtk4::Dialog::with_buttons(
@@ -504,6 +511,8 @@ pub fn run_gui() {
                     log_text.push_str(&format!("  ISO: {}\n", iso_path));
                     log_text.push_str(&format!("  Device: {}\n", device_path));
 
+                    let mut persistence_config: Option<PersistenceConfig> = None;
+
                     // Determine write mode and options
                     let is_windows_mode = windows_group.is_visible();
 
@@ -514,7 +523,55 @@ pub fn run_gui() {
                         log_text.push_str(&format!("  Mode: Windows (cluster size: {} bytes)\n", cluster_size));
                     } else if linux_group.is_visible() {
                         let persistence = persistence_checkbox.is_active();
-                        log_text.push_str(&format!("  Mode: Linux (persistence: {})\n", if persistence { "enabled" } else { "disabled" }));
+                        if persistence {
+                            let persistence_type = match linux_persistence::detect_persistence_type(&iso_path) {
+                                Ok(kind) => kind,
+                                Err(e) => {
+                                    let msg = format!("ERROR: Could not detect persistence type: {}\n", e);
+                                    buffer.set_text(&msg);
+                                    write_button.set_sensitive(true);
+                                    progress_bar.set_text(Some("Error"));
+                                    return;
+                                }
+                            };
+
+                            let recommended_size = match linux_persistence::get_recommended_persistence_size(&iso_path, &device_path) {
+                                Ok(size) => size,
+                                Err(e) => {
+                                    let msg = format!("ERROR: Could not calculate persistence size: {}\n", e);
+                                    buffer.set_text(&msg);
+                                    write_button.set_sensitive(true);
+                                    progress_bar.set_text(Some("Error"));
+                                    return;
+                                }
+                            };
+
+                            let config = PersistenceConfig {
+                                enabled: true,
+                                size_mb: recommended_size,
+                                persistence_type,
+                                label: "persistence".to_string(),
+                            };
+
+                            if let Err(e) = linux_persistence::validate_persistence_config(&config) {
+                                let msg = format!("ERROR: Invalid persistence configuration: {}\n", e);
+                                buffer.set_text(&msg);
+                                write_button.set_sensitive(true);
+                                progress_bar.set_text(Some("Error"));
+                                return;
+                            }
+
+                            log_text.push_str(&format!(
+                                "  Mode: Linux (persistence: enabled, type: {:?}, size: {} MB)\n",
+                                config.persistence_type, config.size_mb
+                            ));
+                            persistence_config = Some(config);
+                        } else {
+                            log_text.push_str("  Mode: Linux (persistence: disabled)\n");
+                        }
+                    } else {
+                        // Default to Linux mode if no advanced group is visible
+                        log_text.push_str("  Mode: Linux (persistence: disabled)\n");
                     }
 
                     buffer.set_text(&log_text);
@@ -532,6 +589,8 @@ pub fn run_gui() {
                     let log_view_clone = log_view.clone();
                     let iso_path_clone = iso_path.clone();
                     let device_path_clone = device_path.clone();
+                    let persistence_config_clone = persistence_config.clone();
+                    let is_windows_mode_clone = is_windows_mode;
 
                     dialog.connect_response(move |dialog, response| {
                         dialog.close();
@@ -556,119 +615,103 @@ pub fn run_gui() {
                         progress_bar_clone.set_text(Some("Starting..."));
                         progress_bar_clone.set_visible(true);
 
-                        // Start infinite progress animation
+                        // Keep UI responsive: run heavy work on a background thread
+                        let (sender, receiver) = glib::MainContext::channel(Priority::default());
+                        let pulse_running = std::rc::Rc::new(std::cell::Cell::new(true));
+                        let pulse_flag = pulse_running.clone();
                         let progress_bar_anim = progress_bar_clone.clone();
-                        let buffer_anim = log_view_clone.buffer();
-                        glib::timeout_add_local(std::time::Duration::from_millis(100), move || {
-                            progress_bar_anim.pulse();
-
-                            // Update status text periodically
-                            let start = buffer_anim.start_iter();
-                            let end = buffer_anim.end_iter();
-                            let current_log = buffer_anim.text(&start, &end, false).to_string();
-
-                            // Only append if we haven't added a recent status update
-                            if !current_log.contains("Writing") {
-                                let mut new_log = current_log;
-                                new_log.push_str("Writing ISO to USB device...\n");
-                                buffer_anim.set_text(&new_log);
+                        glib::timeout_add_local(std::time::Duration::from_millis(120), move || {
+                            if !pulse_flag.get() {
+                                return glib::ControlFlow::Break;
                             }
-
+                            progress_bar_anim.pulse();
                             glib::ControlFlow::Continue
                         });
 
-                        // Execute write operation with enhanced logging
-                        let result = if is_windows_mode {
-                            println!("[DEBUG] Writing Windows ISO to USB");
-                            current_text.push_str("Starting Windows dual-partition write...\n");
-                            current_text.push_str("Creating BOOT and ESD-USB partitions...\n");
-                            buffer.set_text(&current_text);
+                        // UI receiver to update progress/log without blocking
+                        {
+                            let buffer_ui = log_view_clone.buffer();
+                            let progress_ui = progress_bar_clone.clone();
+                            let write_button_ui = write_button_clone.clone();
+                            receiver.attach(None, move |msg| {
+                                match msg {
+                                    WorkerMessage::Log(line) => {
+                                        let start = buffer_ui.start_iter();
+                                        let end = buffer_ui.end_iter();
+                                        let mut text = buffer_ui.text(&start, &end, false).to_string();
+                                        text.push_str(&line);
+                                        if !text.ends_with('\n') {
+                                            text.push('\n');
+                                        }
+                                        buffer_ui.set_text(&text);
+                                    }
+                                    WorkerMessage::Status(status) => {
+                                        progress_ui.set_text(Some(&status));
+                                    }
+                                    WorkerMessage::Done(result) => {
+                                        pulse_running.set(false);
+                                        progress_ui.set_fraction(1.0);
+                                        write_button_ui.set_sensitive(true);
 
-                            // Update progress status
-                            let progress_bar_status = progress_bar_clone.clone();
-                            let buffer_status = log_view_clone.buffer();
-                            glib::timeout_add_local(std::time::Duration::from_millis(500), move || {
-                                let start = buffer_status.start_iter();
-                                let end = buffer_status.end_iter();
-                                let current_log = buffer_status.text(&start, &end, false).to_string();
+                                        let start = buffer_ui.start_iter();
+                                        let end = buffer_ui.end_iter();
+                                        let mut text = buffer_ui.text(&start, &end, false).to_string();
 
-                                if !current_log.contains("Creating BOOT") && !current_log.contains("Copying") {
-                                    let mut new_log = current_log;
-                                    new_log.push_str("Creating BOOT and ESD-USB partitions...\n");
-                                    buffer_status.set_text(&new_log);
-                                    progress_bar_status.set_text(Some("Creating partitions..."));
+                                        match result {
+                                            Ok(()) => {
+                                                text.push_str("\n✓ Write operation completed successfully!\n");
+                                                progress_ui.set_text(Some("Complete!"));
+                                                let completion_dialog = gtk4::MessageDialog::builder()
+                                                    .text("USB creation complete!")
+                                                    .message_type(gtk4::MessageType::Info)
+                                                    .buttons(gtk4::ButtonsType::Ok)
+                                                    .build();
+                                                completion_dialog.connect_response(|dialog, _| dialog.close());
+                                                completion_dialog.show();
+                                            }
+                                            Err(e) => {
+                                                text.push_str(&format!("\n✗ Write operation failed: {}\n", e));
+                                                progress_ui.set_text(Some("Failed"));
+                                            }
+                                        }
+
+                                        buffer_ui.set_text(&text);
+                                    }
                                 }
-
-                                glib::ControlFlow::Break
+                                glib::ControlFlow::Continue
                             });
-
-                            crate::flows::windows_flow::write_windows_iso_to_usb(
-                                &iso_path_clone,
-                                &device_path_clone,
-                                false,
-                                &mut std::io::Cursor::new(Vec::new())
-                            )
-                        } else {
-                            println!("[DEBUG] Writing Linux ISO to USB");
-                            current_text.push_str("Starting Linux ISO write...\n");
-                            current_text.push_str("Writing image using dd command...\n");
-                            buffer.set_text(&current_text);
-
-                            // Update progress status
-                            let progress_bar_status = progress_bar_clone.clone();
-                            let buffer_status = log_view_clone.buffer();
-                            glib::timeout_add_local(std::time::Duration::from_millis(500), move || {
-                                let start = buffer_status.start_iter();
-                                let end = buffer_status.end_iter();
-                                let current_log = buffer_status.text(&start, &end, false).to_string();
-
-                                if !current_log.contains("dd command") {
-                                    let mut new_log = current_log;
-                                    new_log.push_str("Writing ISO image with dd...\n");
-                                    buffer_status.set_text(&new_log);
-                                    progress_bar_status.set_text(Some("Writing image..."));
-                                }
-
-                                glib::ControlFlow::Break
-                            });
-
-                            crate::flows::linux_flow::write_iso_to_usb(
-                                &iso_path_clone,
-                                &device_path_clone,
-                                &mut std::io::Cursor::new(Vec::new())
-                            )
-                        };
-
-                        // Update UI after operation completes
-                        progress_bar_clone.set_fraction(1.0);
-                        progress_bar_clone.set_text(Some("Complete!"));
-                        write_button_clone.set_sensitive(true);
-
-                        let buffer = log_view_clone.buffer();
-                        let start = buffer.start_iter();
-                        let end = buffer.end_iter();
-                        let mut text = buffer.text(&start, &end, false).to_string();
-
-                        match result {
-                            Ok(()) => {
-                                text.push_str("\n✓ Write operation completed successfully!\n");
-
-                                // Show completion dialog
-                                let completion_dialog = gtk4::MessageDialog::builder()
-                                    .text("USB creation complete!")
-                                    .message_type(gtk4::MessageType::Info)
-                                    .buttons(gtk4::ButtonsType::Ok)
-                                    .build();
-                                completion_dialog.connect_response(|dialog, _| dialog.close());
-                                completion_dialog.show();
-                            },
-                            Err(e) => {
-                                text.push_str(&format!("\n✗ Write operation failed: {}\n", e));
-                                progress_bar_clone.set_text(Some("Failed"));
-                            }
                         }
 
-                        buffer.set_text(&text);
+                        // Spawn worker thread
+                        let iso_for_thread = iso_path_clone.clone();
+                        let device_for_thread = device_path_clone.clone();
+                        let persistence_for_thread = persistence_config_clone.clone();
+                        let sender_clone = sender.clone();
+                        std::thread::spawn(move || {
+                            let send = |m| { let _ = sender_clone.send(m); };
+                            if is_windows_mode_clone {
+                                send(WorkerMessage::Log("Starting Windows dual-partition write...".into()));
+                                send(WorkerMessage::Status("Creating partitions...".into()));
+                                let result = crate::flows::windows_flow::write_windows_iso_to_usb(
+                                    &iso_for_thread,
+                                    &device_for_thread,
+                                    false,
+                                    &mut std::io::Cursor::new(Vec::new())
+                                ).map_err(|e| e.to_string());
+                                let _ = sender_clone.send(WorkerMessage::Done(result));
+                            } else {
+                                send(WorkerMessage::Log("Starting Linux ISO write...".into()));
+                                send(WorkerMessage::Log("Writing image using dd...".into()));
+                                send(WorkerMessage::Status("Writing image...".into()));
+                                let result = crate::flows::linux_flow::write_iso_to_usb_with_persistence(
+                                    &iso_for_thread,
+                                    &device_for_thread,
+                                    &mut std::io::Cursor::new(Vec::new()),
+                                    persistence_for_thread
+                                ).map_err(|e| e.to_string());
+                                let _ = sender_clone.send(WorkerMessage::Done(result));
+                            }
+                        });
                     });
 
                     dialog.show();
@@ -678,8 +721,43 @@ pub fn run_gui() {
             // Set the main vbox as the window content
             window.set_child(Some(&vbox));
             window.show();
+
+            // Show Flatpak permission dialog if needed
+            if needs_root && is_flatpak {
+                show_flatpak_instructions_dialog(&window);
+            }
         }
     });
 
     app.run();
+}
+
+fn show_flatpak_instructions_dialog(window: &ApplicationWindow) {
+    let dialog = MessageDialog::builder()
+        .text("🔒 Permisos de Root Requeridos")
+        .secondary_text(
+            "Esta aplicación necesita acceso root para gestionar dispositivos USB.\n\n\
+            ⚠️  ESTÁS EJECUTANDO EN FLATPAK ⚠️\n\n\
+            En Flatpak no se pueden obtener permisos automáticamente.\n\
+            Por favor, cierra esta aplicación y ejecute:\n\n\
+            💻 COMANDO RECOMENDADO:\n\
+            flatpak-spawn --host pkexec flatpak run com.github.vicrodh.MajUSB\n\n\
+            📋 INSTRUCCIONES:\n\
+            1. Instale flatpak-xdg-utils si no lo tiene:\n\
+               flatpak install flathub org.freedesktop.Sdk.Extension.flatpak-xdg-utils\n\n\
+            2. Ejecute el comando recomendado arriba\n\n\
+            3. O instale manualmente las herramientas necesarias"
+        )
+        .buttons(ButtonsType::Ok)
+        .message_type(MessageType::Warning)
+        .modal(true)
+        .transient_for(window)
+        .build();
+
+    dialog.set_default_response(ResponseType::Ok);
+    dialog.connect_response(|dialog, _| {
+        dialog.close();
+    });
+
+    dialog.show();
 }
