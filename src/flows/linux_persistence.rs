@@ -156,6 +156,11 @@ pub fn create_persistence_partition(
         return Err(e);
     }
 
+    // Add overlay kernel param for Fedora-style overlay if applicable
+    if matches!(config.persistence_type, PersistenceType::OverlayFS) && matches!(config.partition_table, PartitionTableType::Gpt | PartitionTableType::Mbr) {
+        inject_overlay_kernel_params(usb_device, &config.label);
+    }
+
     // Final settle to make the new partition visible
     let _ = Command::new("sync").status();
     let _ = run_command("partprobe", &[usb_device]);
@@ -439,6 +444,56 @@ fn setup_overlayfs_persistence(partition_path: &str, _config: &PersistenceConfig
     fs::write(&overlay_conf, conf_content)?;
 
     Ok(())
+}
+
+/// Inject kernel parameters for overlay persistence (Fedora/OverlayFS) if boot configs are writable.
+pub fn inject_overlay_kernel_params(usb_device: &str, overlay_label: &str) {
+    let candidate_parts = [build_partition_path(usb_device, 1), build_partition_path(usb_device, 2)];
+    let candidate_configs = [
+        "EFI/BOOT/grub.cfg",
+        "EFI/fedora/grub.cfg",
+        "EFI/BOOT/grub2.cfg",
+        "isolinux/isolinux.cfg",
+        "syslinux/isolinux.cfg",
+        "syslinux/syslinux.cfg",
+        "isolinux.cfg",
+    ];
+    let param = format!("rd.live.overlay=LABEL={}", overlay_label);
+
+    for part in candidate_parts.iter() {
+        let mnt = match tempfile::tempdir() {
+            Ok(dir) => dir,
+            Err(_) => continue,
+        };
+        if run_command("mount", &[part.as_str(), mnt.path().to_str().unwrap()]).is_err() {
+            continue;
+        }
+        for cfg in candidate_configs.iter() {
+            let path = mnt.path().join(cfg);
+            if !path.exists() {
+                continue;
+            }
+            if let Ok(contents) = fs::read_to_string(&path) {
+                if contents.contains(&param) {
+                    continue;
+                }
+                let mut new_lines = Vec::new();
+                for line in contents.lines() {
+                    if line.trim_start().starts_with("linux") || line.trim_start().starts_with("linuxefi") {
+                        new_lines.push(format!("{} {}", line, param));
+                    } else if line.trim_start().starts_with("append") {
+                        new_lines.push(format!("{} {}", line, param));
+                    } else {
+                        new_lines.push(line.to_string());
+                    }
+                }
+                if fs::write(&path, new_lines.join("\n")).is_ok() {
+                    println!("[PERSISTENCE] Added overlay kernel parameter to {}", path.display());
+                }
+            }
+        }
+        let _ = run_command("umount", &[part.as_str()]);
+    }
 }
 
 /// Setup custom persistence method
