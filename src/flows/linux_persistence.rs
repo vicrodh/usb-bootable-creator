@@ -75,14 +75,15 @@ pub fn create_persistence_partition(
     thread::sleep(Duration::from_millis(500));
     refresh_partition_table(usb_device)?;
 
-    // Detect existing partition table and ensure it matches requested type
+    // Detect existing partition table; if it differs from user selection, log and continue with detected type
     let current_table = detect_partition_table_type(usb_device)?;
     if current_table != config.partition_table {
-        return Err(UsbCreatorError::validation_error(format!(
-            "Requested partition table {:?} but device currently uses {:?}. Select the matching table type for this ISO or recreate the media.",
+        println!(
+            "[PERSISTENCE] Requested table {:?} but detected {:?}. Proceeding with detected table.",
             config.partition_table, current_table
-        )));
+        );
     }
+    let effective_table = current_table;
 
     // Ensure nothing is mounted from the target device before we repartition
     let previously_mounted = unmount_device_partitions(usb_device)?;
@@ -133,8 +134,18 @@ pub fn create_persistence_partition(
         return Err(e);
     }
 
+    // Ensure kernel sees the new partition node before proceeding
+    if let Err(e) = refresh_partition_table(usb_device) {
+        println!("[PERSISTENCE] Warning: partition table refresh after mkpart failed: {}", e);
+    }
+    let _ = Command::new("partx").args(["-u", usb_device]).status();
+    let _ = Command::new("sync").status();
+    settle_udev();
+    thread::sleep(Duration::from_millis(500));
+    wait_for_partition_node(&partition_path)?;
+
     // Set partition flag
-    if config.partition_table == PartitionTableType::Mbr {
+    if effective_table == PartitionTableType::Mbr {
         println!("[PERSISTENCE] Marking partition {} as LBA (MBR)...", partition_number);
         if let Err(e) = run_command("parted", &[
             "-s", usb_device, "set", &partition_number.to_string(), "lba", "on"
@@ -157,7 +168,7 @@ pub fn create_persistence_partition(
     }
 
     // Add overlay kernel param for Fedora-style overlay if applicable
-    if matches!(config.persistence_type, PersistenceType::OverlayFS) && matches!(config.partition_table, PartitionTableType::Gpt | PartitionTableType::Mbr) {
+    if matches!(config.persistence_type, PersistenceType::OverlayFS) {
         inject_overlay_kernel_params(usb_device, &config.label);
     }
 
@@ -361,6 +372,25 @@ fn refresh_partition_table(device: &str) -> UsbCreatorResult<()> {
     Err(UsbCreatorError::validation_error(
         "Kernel did not refresh partition table after write; aborting persistence creation",
     ))
+}
+
+/// Wait for partition node to appear after mkpart
+fn wait_for_partition_node(partition_path: &str) -> UsbCreatorResult<()> {
+    for attempt in 1..=TABLE_REFRESH_ATTEMPTS * 2 {
+        if std::path::Path::new(partition_path).exists() {
+            return Ok(());
+        }
+        println!(
+            "[PERSISTENCE] Waiting for {} to appear (attempt {}/{})...",
+            partition_path, attempt, TABLE_REFRESH_ATTEMPTS * 2
+        );
+        settle_udev();
+        thread::sleep(Duration::from_millis(500));
+    }
+    Err(UsbCreatorError::validation_error(format!(
+        "Partition node {} did not appear after creation",
+        partition_path
+    )))
 }
 /// Try to relocate the GPT backup header to the end of the device (best effort).
 /// This is needed for hybrid ISOs whose backup GPT sits at the end of the image,
