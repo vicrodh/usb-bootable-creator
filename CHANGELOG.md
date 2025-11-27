@@ -5,9 +5,39 @@ All notable changes to the Rust USB Bootable Creator project will be documented 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased - Windows Optimization Planning Phase]
+
+### Added
+- **Windows Optimization Documentation**
+  - `PLAN_WINDOWS_OPTIMIZATION.md` - Comprehensive 3-phase optimization plan for Windows USB creation
+  - `WINDOWS_OPTIMIZATION_RESEARCH.md` - Complete analysis of Rufus bypass techniques (TPM, Secure Boot, RAM)
+  - `WINDOWS_OPTIMIZATION_TASKS.md` - Detailed task breakdown for GPT-5.1-Codex implementation (13 tasks across 3 phases)
+  - `HANDOFF_WINDOWS_OPTIMIZATION.md` - State management and handoff protocol for Windows optimization work
+- **Rufus Code Analysis**
+  - Analyzed `./rufus/src/wue.c` (Windows User Experience) - 1103 lines
+  - Documented registry-based bypass technique: `HKLM\SYSTEM\Setup\LabConfig` keys
+  - Identified two implementation methods: offline registry modification vs unattend.xml
+  - Found additional bypasses: online account requirement, BitLocker, data collection
+- **Phase 3 Research Completed**
+  - Bypass mechanisms for Windows 11 requirements fully documented
+  - Technical approach defined: unattend.xml generation + wimlib integration
+  - Dependencies identified: wimtools, bitflags crate
+  - Security considerations and user warnings documented
+
 ## [Unreleased - Checkpoint 1.2 Complete]
 
 ### Added
+- **Windows optimization - Task 1.1 (instrumentation)**
+  - Added `WindowsFlowMetrics` to capture partition/format/copy timings, total bytes, average and peak throughput during Windows USB creation
+  - Parse rsync `--info=progress2` output for live bytes/speed and log consolidated metrics at the end of the flow
+- **Windows optimization - Task 1.2 (rsync flags)**
+  - Added throughput-focused rsync flags (`--no-inc-recursive`, `--inplace`, `--info=progress2`, optional `--whole-file` for USB) for BOOT and INSTALL copies in both standard and streaming flows
+- **Windows optimization - Task 1.3 (NTFS mount options)**
+  - Detect `ntfs-3g` availability and mount INSTALL with `big_writes,async,noatime,nodiratime` (fallback to kernel NTFS with `noatime,nodiratime`)
+- **Windows optimization - Task 1.4 (block size detection)**
+  - Detect device physical block size and apply tuned FAT32 cluster size (`-s`) and NTFS cluster size (`-c`) during formatting (streaming and standard flows)
+- **Windows optimization - Task 1.5 (benchmarking)**
+  - Added `scripts/benchmark_windows.sh` to measure end-to-end creation time across multiple iterations
 - **Complete GUI Modular Architecture**
   - `src/gui/widgets.rs` - 17 widget creation functions for ISO selection, device selection, progress bars, and advanced options
   - `src/gui/events.rs` - 3 event handler functions for button clicks, device refresh, and write operations

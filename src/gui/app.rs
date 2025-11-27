@@ -22,7 +22,7 @@ fn write_linux_iso_with_progress(iso_path: &str, usb_device: &str, _log_view: &T
 /// Write Windows ISO (use original working version)
 fn write_windows_iso_with_progress(iso_path: &str, usb_device: &str, _log_view: &TextView, _progress_bar: &ProgressBar) -> io::Result<()> {
     // Use the original, working implementation
-    crate::flows::windows_flow::write_windows_iso_to_usb(iso_path, usb_device, false, &mut std::io::Cursor::new(Vec::new()))
+    crate::flows::windows_flow::write_windows_iso_to_usb(iso_path, usb_device, false, &mut std::io::Cursor::new(Vec::new())).map(|_| ())
 }
 
 /// Format bytes in human readable format
@@ -520,7 +520,7 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
                                     &device_for_thread,
                                     false,
                                     &mut std::io::Cursor::new(Vec::new())
-                                ).map_err(|e| e.to_string());
+                                ).map(|_| ()).map_err(|e| e.to_string());
                                 let _ = sender_clone.send(WorkerMessage::Done(result));
                             } else {
                                 send(WorkerMessage::Log("Starting Linux ISO write...".into()));
@@ -555,4 +555,3 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
 
     app.run();
 }
-

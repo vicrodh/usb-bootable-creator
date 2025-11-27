@@ -2,12 +2,68 @@
 
 use std::collections::HashMap;
 use std::fs;
+use std::io;
 use std::path::Path;
 use std::process::Command;
 
 use libc; // For geteuid
 use serde_json; // For JSON parsing
 use which; // To check if a binary exists
+
+/// Parse an rsync `--info=progress2` line and return (bytes_transferred, speed_mb_per_s).
+pub fn parse_rsync_progress(line: &str) -> Option<(u64, Option<f64>)> {
+    let trimmed = line.trim_start();
+    let mut parts = trimmed.split_whitespace();
+
+    let bytes_str = parts.next()?;
+    let bytes = bytes_str.replace(',', "").parse::<u64>().ok()?;
+
+    let speed_token = parts.find(|p| p.contains("/s"));
+    let speed_mb = speed_token.and_then(|token| {
+        let cleaned = token.replace("/s", "");
+        if let Some(value) = cleaned.strip_suffix("MB") {
+            value.parse::<f64>().ok()
+        } else if let Some(value) = cleaned.strip_suffix("MiB") {
+            value.parse::<f64>().ok()
+        } else if let Some(value) = cleaned.strip_suffix("kB") {
+            value.parse::<f64>().ok().map(|v| v / 1024.0)
+        } else if let Some(value) = cleaned.strip_suffix("KB") {
+            value.parse::<f64>().ok().map(|v| v / 1024.0)
+        } else {
+            None
+        }
+    });
+
+    Some((bytes, speed_mb))
+}
+
+/// Detect if a device path refers to a USB device via lsblk transport.
+pub fn is_usb_device(device: &str) -> bool {
+    let dev_name = device.trim_start_matches("/dev/");
+    if let Ok(output) = Command::new("lsblk").args(["-ndo", "TRAN", dev_name]).output() {
+        let tran = String::from_utf8_lossy(&output.stdout).to_lowercase();
+        return tran.contains("usb");
+    }
+    false
+}
+
+/// Detect the optimal (physical) block size for a device. Falls back to 4096 on errors.
+pub fn get_device_optimal_block_size(device: &str) -> io::Result<u64> {
+    let dev_name = device.trim_start_matches("/dev/");
+    let path = format!("/sys/block/{}/queue/physical_block_size", dev_name);
+    let contents = fs::read_to_string(&path)?;
+    let size = contents.trim().parse::<u64>().unwrap_or(4096);
+    Ok(size.max(512))
+}
+
+/// Check if ntfs-3g is available on the system.
+pub fn has_ntfs3g() -> bool {
+    Command::new("which")
+        .arg("ntfs-3g")
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
 
 /// Utility: Check if running as root
 pub fn is_root() -> bool {
@@ -561,4 +617,25 @@ pub fn check_required_packages() -> Option<(Vec<String>, String)> {
         _ => format!("Please install: {}", missing_pkgs.iter().cloned().collect::<Vec<_>>().join(", ")),
     };
     Some((missing_pkgs.iter().cloned().collect(), install_cmd))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_rsync_progress;
+
+    #[test]
+    fn parses_rsync_progress_line_with_speed() {
+        let line = "  123,456,789  45%  12.3MB/s    0:10:00 (xfr#5, to-chk=0/1)";
+        let parsed = parse_rsync_progress(line).unwrap();
+        assert_eq!(parsed.0, 123_456_789);
+        assert_eq!(parsed.1.unwrap_or(0.0), 12.3);
+    }
+
+    #[test]
+    fn parses_rsync_progress_line_without_speed() {
+        let line = "  50,000,000  10%   0:05:00 (xfr#1, to-chk=4/5)";
+        let parsed = parse_rsync_progress(line).unwrap();
+        assert_eq!(parsed.0, 50_000_000);
+        assert!(parsed.1.is_none());
+    }
 }
