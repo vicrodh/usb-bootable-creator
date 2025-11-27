@@ -13,6 +13,23 @@ enum WorkerMessage {
     Done(Result<(), String>),
 }
 
+/// Writer that forwards log output to the GUI channel.
+struct ChannelWriter {
+    sender: glib::Sender<WorkerMessage>,
+}
+
+impl std::io::Write for ChannelWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let msg = String::from_utf8_lossy(buf).to_string();
+        let _ = self.sender.send(WorkerMessage::Log(msg));
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
 /// Write Linux ISO (use original working version)
 fn write_linux_iso_with_progress(iso_path: &str, usb_device: &str, _log_view: &TextView, _progress_bar: &ProgressBar) -> io::Result<()> {
     // Use the original, working implementation
@@ -329,13 +346,22 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
                     let mut persistence_config: Option<PersistenceConfig> = None;
 
                     // Determine write mode and options
-                    let is_windows_mode = windows_group.is_visible();
+                    // Prefer explicit detection over UI visibility to avoid falling back to Linux when the Windows group is hidden.
+                    let detected_windows = crate::utils::is_windows_iso(&iso_path).unwrap_or(false);
+                    let is_windows_mode = if windows_group.is_visible() {
+                        true
+                    } else {
+                        detected_windows
+                    };
 
                     if is_windows_mode {
                         let cluster_idx = cluster_combo.active().unwrap_or(3) as usize;
                         let cluster_sizes = [512, 1024, 2048, 4096, 8192, 16384, 32768, 65536];
                         let cluster_size = *cluster_sizes.get(cluster_idx).unwrap_or(&4096);
                         log_text.push_str(&format!("  Mode: Windows (cluster size: {} bytes)\n", cluster_size));
+                    } else if detected_windows {
+                        // Windows detected but advanced panel not open; use default cluster size.
+                        log_text.push_str("  Mode: Windows (auto-detected, cluster size: 4096 bytes)\n");
                     } else if linux_group.is_visible() {
                         let persistence = persistence_checkbox.is_active();
                         if persistence {
@@ -515,11 +541,12 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
                             if is_windows_mode_clone {
                                 send(WorkerMessage::Log("Starting Windows dual-partition write...".into()));
                                 send(WorkerMessage::Status("Creating partitions...".into()));
+                                let mut logger = ChannelWriter { sender: sender_clone.clone() };
                                 let result = crate::flows::windows_flow::write_windows_iso_to_usb(
                                     &iso_for_thread,
                                     &device_for_thread,
                                     false,
-                                    &mut std::io::Cursor::new(Vec::new())
+                                    &mut logger
                                 ).map(|_| ()).map_err(|e| e.to_string());
                                 let _ = sender_clone.send(WorkerMessage::Done(result));
                             } else {

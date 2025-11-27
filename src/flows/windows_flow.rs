@@ -67,6 +67,57 @@ fn run_rsync_with_metrics(
     Ok(transferred)
 }
 
+fn ensure_not_system_device(device: &str, log: &mut dyn Write) -> io::Result<()> {
+    let dev_base = device.trim_start_matches("/dev/");
+    let output = Command::new("lsblk")
+        .args(["-nr", "-o", "NAME,MOUNTPOINT"])
+        .output()?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    for line in stdout.lines() {
+        let mut parts = line.split_whitespace();
+        if let (Some(name), Some(mountpoint)) = (parts.next(), parts.next()) {
+            if name.starts_with(dev_base) && (mountpoint == "/" || mountpoint == "/boot" || mountpoint == "/boot/efi") {
+                writeln!(
+                    log,
+                    "Refusing to operate on system device {} (mounted at {})",
+                    device, mountpoint
+                )?;
+                return Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    format!("Device {} appears to host system mount {}", device, mountpoint),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn unmount_device_mounts(device: &str, log: &mut dyn Write) -> io::Result<()> {
+    let dev_name = device.trim_start_matches("/dev/");
+    let output = Command::new("lsblk")
+        .args(["-nr", "-o", "NAME,MOUNTPOINT"])
+        .output()?;
+
+    let output_str = String::from_utf8_lossy(&output.stdout);
+    for line in output_str.lines() {
+        let mut parts = line.split_whitespace();
+        if let (Some(name), Some(mountpoint)) = (parts.next(), parts.next()) {
+            if name.starts_with(dev_name) && !mountpoint.is_empty() && mountpoint != "/" && mountpoint != "/boot" && mountpoint != "/boot/efi" {
+                writeln!(log, "Unmounting busy mount {}...", mountpoint)?;
+                let status = Command::new("umount").args(["-f", mountpoint]).status()?;
+                if !status.success() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::Other,
+                        format!("Failed to unmount {}", mountpoint),
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 pub fn write_windows_iso_to_usb(iso_path: &str, usb_device: &str, use_wim: bool, log: &mut dyn Write) -> io::Result<WindowsFlowMetrics> {
     let _ = use_wim; // Placeholder to maintain signature parity until WIM handling is implemented.
     let overall_start = Instant::now();
@@ -81,6 +132,10 @@ pub fn write_windows_iso_to_usb(iso_path: &str, usb_device: &str, use_wim: bool,
     for m in [&iso_m, &boot_m, &inst_m] {
         fs::create_dir_all(m)?;
     }
+    // Safety: refuse to operate on system devices and unmount removable mounts.
+    ensure_not_system_device(usb_device, log)?;
+    // Ensure device and its partitions are unmounted before wipefs/partitioning.
+    unmount_device_mounts(usb_device, log)?;
     let mut cleanup = || {
         let _ = Command::new("umount").arg(&inst_m).status();
         let _ = Command::new("umount").arg(&boot_m).status();
@@ -260,6 +315,24 @@ pub fn write_windows_iso_to_usb_stream(iso_path: &str, usb_device: &str, cluster
     let inst_m = base.path().join("install");
     for m in [&iso_m, &boot_m, &inst_m] {
         std::fs::create_dir_all(m)?;
+    }
+    // Safety: refuse to operate on system devices.
+    ensure_not_system_device(usb_device, &mut std::io::sink())?;
+    // Ensure device and its partitions are unmounted before wipefs/partitioning.
+    {
+        let dev_name = usb_device.trim_start_matches("/dev/");
+        if let Ok(output) = std::process::Command::new("lsblk").args(["-nr", "-o", "NAME,MOUNTPOINT"]).output() {
+            let out = String::from_utf8_lossy(&output.stdout);
+            for line in out.lines() {
+                let mut parts = line.split_whitespace();
+                if let (Some(name), Some(mountpoint)) = (parts.next(), parts.next()) {
+                    if name.starts_with(dev_name) && !mountpoint.is_empty() {
+                        println!("Unmounting busy mount {}...", mountpoint);
+                        let _ = std::process::Command::new("umount").args(["-f", mountpoint]).status();
+                    }
+                }
+            }
+        }
     }
     let cleanup = || {
         let _ = std::process::Command::new("umount").arg(&inst_m).status();

@@ -69,6 +69,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Comprehensive development plan in PLAN.md**
 
 ### Fixed
+- Windows flow now refuses to operate on system devices (/, /boot, /boot/efi) and forcibly unmounts only non-system mountpoints before wipefs/partitioning to avoid busy-device failures.
+- GUI Windows flow now forwards flow logs to the UI via channel-backed writer, ensuring progress messages from the dual-partition flow are visible during long copies.
 - GTK4 threading compatibility issues with progress updates
 - Lifetime and borrowing issues in event handlers
 - Type conversion issues for cluster size configuration
