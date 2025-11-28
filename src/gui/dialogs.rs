@@ -17,6 +17,7 @@ pub fn show_missing_packages_dialog_simple(
         gtk4::DialogFlags::MODAL,
         &[("OK", gtk4::ResponseType::Ok)],
     );
+    dialog.set_default_width(640);
     let content = dialog.content_area();
     let vbox = GtkBox::new(Orientation::Vertical, 8);
     let label = Label::new(Some("Some required system packages are missing. Please install them using the command below:"));
@@ -52,6 +53,7 @@ pub fn show_usb_write_confirmation_dialog(
         .buttons(gtk4::ButtonsType::OkCancel)
         .message_type(gtk4::MessageType::Warning)
         .build();
+    dialog.set_default_width(640);
 
     if let Some(p) = parent {
         dialog.set_transient_for(Some(p));
@@ -62,11 +64,13 @@ pub fn show_usb_write_confirmation_dialog(
 
 /// Show completion dialog after successful USB creation
 pub fn show_usb_completion_dialog() -> gtk4::MessageDialog {
-    gtk4::MessageDialog::builder()
+    let dialog = gtk4::MessageDialog::builder()
         .text("USB creation complete!")
         .message_type(gtk4::MessageType::Info)
         .buttons(gtk4::ButtonsType::Ok)
-        .build()
+        .build();
+    dialog.set_default_width(640);
+    dialog
 }
 
 /// Show Flatpak permissions instructions dialog
@@ -92,6 +96,7 @@ pub fn show_flatpak_instructions_dialog(window: &ApplicationWindow) -> gtk4::Mes
         .transient_for(window)
         .build();
 
+    dialog.set_default_width(640);
     dialog.set_default_response(ResponseType::Ok);
     dialog.connect_response(|dialog, _| {
         dialog.close();
@@ -113,6 +118,7 @@ pub fn show_iso_file_chooser_dialog_app(
         FileChooserAction::Open,
         &[ ]
     );
+    dialog.set_default_width(640);
     dialog.add_button("Open", gtk4::ResponseType::Ok);
     dialog.add_button("Cancel", gtk4::ResponseType::Cancel);
     let filter = FileFilter::new();
@@ -209,6 +215,7 @@ pub fn show_dd_mode_warning_dialog(parent: &ApplicationWindow) -> bool {
         )
         .build();
 
+    dialog.set_default_width(640);
     let response = MainContext::default().block_on(dialog.run_future());
     dialog.close();
     response == ResponseType::Yes

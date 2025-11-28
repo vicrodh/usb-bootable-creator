@@ -87,7 +87,7 @@ pub fn create_device_selection_widget() -> (GtkBox, ComboBoxText, Button) {
 }
 
 /// Create Windows advanced options with title bar and cluster size selection
-pub fn create_windows_advanced_options() -> (GtkBox, ComboBoxText, CheckButton) {
+pub fn create_windows_advanced_options() -> (GtkBox, ComboBoxText, CheckButton, CheckButton, CheckButton, CheckButton) {
     let windows_group = GtkBox::new(Orientation::Vertical, 8);
     windows_group.set_visible(false);
 
@@ -132,7 +132,27 @@ pub fn create_windows_advanced_options() -> (GtkBox, ComboBoxText, CheckButton) 
     dd_checkbox.set_active(false);
     windows_group.append(&dd_checkbox);
 
-    (windows_group, cluster_combo, dd_checkbox)
+    // Bypass checkboxes (independent toggles)
+    let bypass_tpm = CheckButton::builder()
+        .label("Bypass TPM requirement")
+        .tooltip_text("Intended to add LabConfig bypass for TPM checks (Windows 11).")
+        .build();
+    let bypass_secure_boot = CheckButton::builder()
+        .label("Bypass Secure Boot requirement")
+        .tooltip_text("Intended to add LabConfig bypass for Secure Boot checks (Windows 11).")
+        .build();
+    let bypass_ram = CheckButton::builder()
+        .label("Bypass 4GB RAM requirement")
+        .tooltip_text("Intended to add LabConfig bypass for RAM checks (Windows 11).")
+        .build();
+    bypass_tpm.set_active(false);
+    bypass_secure_boot.set_active(false);
+    bypass_ram.set_active(false);
+    windows_group.append(&bypass_tpm);
+    windows_group.append(&bypass_secure_boot);
+    windows_group.append(&bypass_ram);
+
+    (windows_group, cluster_combo, dd_checkbox, bypass_tpm, bypass_secure_boot, bypass_ram)
 }
 
 /// Create Linux advanced options with title bar, persistence checkbox, and partition table type

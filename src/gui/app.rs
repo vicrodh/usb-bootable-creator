@@ -111,7 +111,7 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
             vbox.append(&sep2);
 
             // --- Windows form group (hidden by default) ---
-            let (windows_group, cluster_combo, dd_checkbox) = gui_widgets::create_windows_advanced_options();
+            let (windows_group, cluster_combo, dd_checkbox, bypass_tpm_cb, bypass_secure_boot_cb, bypass_ram_cb) = gui_widgets::create_windows_advanced_options();
             vbox.append(&windows_group);
 
             // --- Linux form group (hidden by default) ---
@@ -147,6 +147,9 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
                 let linux_group = linux_group.clone();
                 let cluster_combo = cluster_combo.clone();
                 let dd_checkbox = dd_checkbox.clone();
+                let bypass_tpm_cb = bypass_tpm_cb.clone();
+                let bypass_secure_boot_cb = bypass_secure_boot_cb.clone();
+                let bypass_ram_cb = bypass_ram_cb.clone();
                 let persistence_checkbox = persistence_checkbox.clone();
                 let table_type_combo = table_type_combo.clone();
                 let os_label = os_label.clone();
@@ -157,6 +160,9 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
                     linux_group.set_visible(false);
                     cluster_combo.set_active(Some(3));
                     dd_checkbox.set_active(false);
+                    bypass_tpm_cb.set_active(false);
+                    bypass_secure_boot_cb.set_active(false);
+                    bypass_ram_cb.set_active(false);
                     persistence_checkbox.set_active(false);
                     os_label.set_text("");
                     advanced_button_ref.set_label("Advanced options");
@@ -174,6 +180,9 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
                 let windows_group = windows_group.clone();
                 let linux_group = linux_group.clone();
                 let cluster_combo = cluster_combo.clone();
+                let bypass_tpm_cb = bypass_tpm_cb.clone();
+                let bypass_secure_boot_cb = bypass_secure_boot_cb.clone();
+                let bypass_ram_cb = bypass_ram_cb.clone();
                 let persistence_checkbox = persistence_checkbox.clone();
                 let reset_advanced_options = reset_advanced_options.clone();
                 // Global elevation counter
@@ -205,6 +214,9 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
                             linux_group.set_visible(false);
                             advanced_button_ref.set_label("Close advanced options");
                             adv_open.set(true);
+                            bypass_tpm_cb.set_active(false);
+                            bypass_secure_boot_cb.set_active(false);
+                            bypass_ram_cb.set_active(false);
                         },
                         Some(false) => {
                             println!("[DEBUG] [{}:{}] Detected Linux ISO (user-mount)", file!(), line!());
@@ -213,6 +225,9 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
                             linux_group.set_visible(true);
                             advanced_button_ref.set_label("Close advanced options");
                             adv_open.set(true);
+                            bypass_tpm_cb.set_active(false);
+                            bypass_secure_boot_cb.set_active(false);
+                            bypass_ram_cb.set_active(false);
                         },
                         None => {
                             println!("[DEBUG] [{}:{}] User-mount detection failed, requesting elevation...", file!(), line!());
@@ -229,6 +244,9 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
                                     linux_group.set_visible(false);
                                     advanced_button_ref.set_label("Close advanced options");
                                     adv_open.set(true);
+                                    bypass_tpm_cb.set_active(false);
+                                    bypass_secure_boot_cb.set_active(false);
+                                    bypass_ram_cb.set_active(false);
                                 },
                                 Some(false) => {
                                     println!("[DEBUG] [{}:{}] Detected Linux ISO (root mount)", file!(), line!());
@@ -237,6 +255,9 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
                                     linux_group.set_visible(true);
                                     advanced_button_ref.set_label("Close advanced options");
                                     adv_open.set(true);
+                                    bypass_tpm_cb.set_active(false);
+                                    bypass_secure_boot_cb.set_active(false);
+                                    bypass_ram_cb.set_active(false);
                                 },
                                 None => {
                                     println!("[DEBUG] [{}:{}] Could not detect OS type even with root", file!(), line!());
@@ -362,12 +383,22 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
                         false
                     };
 
+                    let bypass_tpm = if is_windows_mode { bypass_tpm_cb.is_active() } else { false };
+                    let bypass_secure_boot = if is_windows_mode { bypass_secure_boot_cb.is_active() } else { false };
+                    let bypass_ram = if is_windows_mode { bypass_ram_cb.is_active() } else { false };
+
                     if is_windows_mode {
                         let cluster_idx = cluster_combo.active().unwrap_or(3) as usize;
                         let cluster_sizes = [512, 1024, 2048, 4096, 8192, 16384, 32768, 65536];
                         let cluster_size = *cluster_sizes.get(cluster_idx).unwrap_or(&4096);
                         let mode_label = if use_dd_mode { "Windows (direct dd mode)" } else { "Windows" };
                         log_text.push_str(&format!("  Mode: {} (cluster size: {} bytes)\n", mode_label, cluster_size));
+                        if bypass_tpm || bypass_secure_boot || bypass_ram {
+                            log_text.push_str(&format!(
+                                "  Bypass options: TPM={} SecureBoot={} RAM={}\n",
+                                bypass_tpm, bypass_secure_boot, bypass_ram
+                            ));
+                        }
                     } else if detected_windows {
                         // Windows detected but advanced panel not open; use default cluster size.
                         log_text.push_str("  Mode: Windows (auto-detected, cluster size: 4096 bytes)\n");
@@ -449,6 +480,9 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
                     let persistence_config_clone = persistence_config.clone();
                     let is_windows_mode_clone = is_windows_mode;
                     let use_dd_mode_clone = use_dd_mode;
+                    let bypass_tpm_clone = bypass_tpm;
+                    let bypass_secure_boot_clone = bypass_secure_boot;
+                    let bypass_ram_clone = bypass_ram;
                     let window_for_dialog_clone = window_for_dialog.clone();
 
                     dialog.connect_response(move |dialog, response| {
@@ -574,6 +608,12 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
                                 }
 
                                 send(WorkerMessage::Log("Starting Windows dual-partition write...".into()));
+                                if bypass_tpm_clone || bypass_secure_boot_clone || bypass_ram_clone {
+                                    send(WorkerMessage::Log(format!(
+                                        "Bypass options selected: TPM={} SecureBoot={} RAM={}",
+                                        bypass_tpm_clone, bypass_secure_boot_clone, bypass_ram_clone
+                                    )));
+                                }
                                 send(WorkerMessage::Status("Creating partitions...".into()));
                                 let mut logger = ChannelWriter { sender: sender_clone.clone() };
                                 let result = crate::flows::windows_flow::write_windows_iso_to_usb(
