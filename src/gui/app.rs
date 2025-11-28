@@ -449,6 +449,7 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
                     let persistence_config_clone = persistence_config.clone();
                     let is_windows_mode_clone = is_windows_mode;
                     let use_dd_mode_clone = use_dd_mode;
+                    let window_for_dialog_clone = window_for_dialog.clone();
 
                     dialog.connect_response(move |dialog, response| {
                         dialog.close();
@@ -462,13 +463,11 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
 
                         if is_windows_mode_clone && use_dd_mode_clone {
                             // Show dd warning; cancel if user declines.
-                            if let Some(window_parent) = window_for_dialog.upgrade() {
-                                if !gui_dialogs::show_dd_mode_warning_dialog(&window_parent) {
-                                    write_button_clone.set_sensitive(true);
-                                    progress_bar_clone.set_fraction(0.0);
-                                    progress_bar_clone.set_show_text(false);
-                                    return;
-                                }
+                            if !gui_dialogs::show_dd_mode_warning_dialog(&window_for_dialog_clone) {
+                                write_button_clone.set_sensitive(true);
+                                progress_bar_clone.set_fraction(0.0);
+                                progress_bar_clone.set_show_text(false);
+                                return;
                             }
                         }
 

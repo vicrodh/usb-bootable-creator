@@ -4,6 +4,7 @@ use gtk4::prelude::*;
 use gtk4::{ApplicationWindow, Dialog, MessageDialog, ButtonsType, MessageType, ResponseType,
             Button, Box as GtkBox, Label, TextView, Orientation, FileChooserAction,
             FileChooserDialog, FileFilter, Entry};
+use glib::MainContext;
 
 /// Show missing packages dialog with installation command
 pub fn show_missing_packages_dialog_simple(
@@ -208,7 +209,7 @@ pub fn show_dd_mode_warning_dialog(parent: &ApplicationWindow) -> bool {
         )
         .build();
 
-    let response = dialog.run();
+    let response = MainContext::default().block_on(dialog.run_future());
     dialog.close();
     response == ResponseType::Yes
 }
