@@ -30,7 +30,7 @@ jobs:
             build-essential libgtk-4-dev libglib2.0-dev libudev-dev \
             pkg-config zlib1g-dev libssl-dev libparted-dev \
             dosfstools ntfs-3g parted rsync policykit-1 \
-            flatpak-builder rpm
+            flatpak-builder rpm wimtools libfuse2 patchelf
 
       - name: Build release binaries
         run: |
@@ -74,6 +74,25 @@ jobs:
           cache-key: flatpak-builder-${{ github.sha }}
           cache: true
 
+      - name: Build AppImage
+        env:
+          ARCH: x86_64
+          APPIMAGE_EXTRACT_AND_RUN: 1
+        run: |
+          APPDIR="$PWD/AppDir"
+          mkdir -p "$APPDIR"/usr/bin "$APPDIR"/usr/share/applications "$APPDIR"/usr/share/icons/hicolor/128x128/apps
+          cp dist/rust-usb-bootable-creator "$APPDIR"/usr/bin/
+          cp dist/cli_helper "$APPDIR"/usr/bin/
+          cp dist/majusb-bootable-creator.desktop "$APPDIR"/usr/share/applications/
+          cp dist/icons/majusb-bootable-creator.png "$APPDIR"/usr/share/icons/hicolor/128x128/apps/majusb-bootable-creator.png
+
+          wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          wget -q https://github.com/linuxdeploy/linuxdeploy-plugin-gtk/releases/download/continuous/linuxdeploy-plugin-gtk.sh
+          chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-gtk.sh
+
+          ./linuxdeploy-x86_64.AppImage --appdir "$APPDIR" --plugin gtk --output appimage
+          mv MajUSB_Bootable_Creator*.AppImage dist/ || mv *.AppImage dist/
+
       - name: Archive PKGBUILD and sources
         run: |
           tar czf dist/majusb-bootable-creator-$(grep '^version' Cargo.toml | head -1 | cut -d'=' -f2 | tr -d ' "').tar.gz \
@@ -95,6 +114,7 @@ jobs:
             dist/*.tar.gz
             dist/flatpak/*
             dist/PKGBUILD
+            dist/*.AppImage
             dist/rust-usb-bootable-creator
             dist/cli_helper
             dist/majusb-bootable-creator.desktop
