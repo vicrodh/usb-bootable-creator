@@ -582,10 +582,21 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
                                 }
                                 send(WorkerMessage::Status("Creating partitions...".into()));
                                 let mut logger = ChannelWriter { sender: sender_clone.clone() };
-                                let result = crate::flows::windows_flow::write_windows_iso_to_usb(
+                                let mut flags = crate::windows::unattend::UnattendFlags::empty();
+                                if bypass_tpm_clone {
+                                    flags |= crate::windows::unattend::UnattendFlags::BYPASS_TPM;
+                                }
+                                if bypass_secure_boot_clone {
+                                    flags |= crate::windows::unattend::UnattendFlags::BYPASS_SECURE_BOOT;
+                                }
+                                if bypass_ram_clone {
+                                    flags |= crate::windows::unattend::UnattendFlags::BYPASS_RAM;
+                                }
+                                let result = crate::flows::windows_flow::write_windows_iso_to_usb_with_bypass(
                                     &iso_for_thread,
                                     &device_for_thread,
                                     false,
+                                    if flags.is_empty() { None } else { Some(flags) },
                                     &mut logger
                                 ).map(|_| ()).map_err(|e| e.to_string());
                                 let _ = sender_clone.send(WorkerMessage::Done(result));

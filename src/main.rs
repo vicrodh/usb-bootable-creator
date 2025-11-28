@@ -2,6 +2,7 @@ mod flows;
 mod gui;
 mod utils;
 mod error;
+mod windows;
 
 use gui::run_gui;
 

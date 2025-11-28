@@ -4,6 +4,8 @@ use std::io::{self, BufRead, Write};
 use std::time::Instant;
 
 use crate::utils::{get_device_optimal_block_size, has_ntfs3g, is_usb_device, parse_rsync_progress};
+use crate::windows::unattend::{Architecture, UnattendFlags, UnattendGenerator};
+use crate::windows::wim::WimEditor;
 use tempfile::tempdir_in;
 
 /// Metrics captured during the Windows USB creation flow.
@@ -181,6 +183,16 @@ pub fn write_windows_iso_direct_dd(
 }
 
 pub fn write_windows_iso_to_usb(iso_path: &str, usb_device: &str, use_wim: bool, log: &mut dyn Write) -> io::Result<WindowsFlowMetrics> {
+    write_windows_iso_to_usb_with_bypass(iso_path, usb_device, use_wim, None, log)
+}
+
+pub fn write_windows_iso_to_usb_with_bypass(
+    iso_path: &str,
+    usb_device: &str,
+    use_wim: bool,
+    bypass_flags: Option<UnattendFlags>,
+    log: &mut dyn Write,
+) -> io::Result<WindowsFlowMetrics> {
     let _ = use_wim; // Placeholder to maintain signature parity until WIM handling is implemented.
     let overall_start = Instant::now();
     let mut metrics = WindowsFlowMetrics::default();
@@ -345,6 +357,22 @@ pub fn write_windows_iso_to_usb(iso_path: &str, usb_device: &str, use_wim: bool,
     metrics.total_bytes = metrics.total_bytes.saturating_add(install_transferred);
 
     // Cleanup
+    // Optional: apply unattend bypass if requested.
+    if let Some(flags) = bypass_flags {
+        let unattend_gen = UnattendGenerator::new(Architecture::X64, flags);
+        let unattend_path = unattend_gen.generate()?;
+        let boot_wim = boot_m.join("sources/boot.wim");
+        if boot_wim.exists() {
+            let wim_editor = WimEditor::new(&boot_wim);
+            let target_index = if wim_editor.verify_index(2).unwrap_or(false) { 2 } else { 1 };
+            writeln!(log, "Injecting Autounattend.xml into boot.wim (index {})...", target_index)?;
+            wim_editor.add_file(target_index, &unattend_path, "/Autounattend.xml")?;
+            writeln!(log, "Bypass unattend injected successfully.")?;
+        } else {
+            writeln!(log, "Warning: boot.wim not found at {}, skipping unattend injection.", boot_wim.display())?;
+        }
+    }
+
     writeln!(log, "Cleaning up mounts...")?;
     cleanup();
     let total_secs = overall_start.elapsed().as_secs_f64().max(f64::EPSILON);
@@ -368,6 +396,15 @@ fn print_error(step: usize, total: usize, msg: &str) {
 
 // Streaming version: print log lines directly to stdout and flush after each
 pub fn write_windows_iso_to_usb_stream(iso_path: &str, usb_device: &str, cluster_bytes: u64) -> io::Result<()> {
+    write_windows_iso_to_usb_stream_with_bypass(iso_path, usb_device, cluster_bytes, None)
+}
+
+pub fn write_windows_iso_to_usb_stream_with_bypass(
+    iso_path: &str,
+    usb_device: &str,
+    cluster_bytes: u64,
+    bypass_flags: Option<UnattendFlags>,
+) -> io::Result<()> {
     let total_steps = 15;
     let mut step = 1;
     let _ = cluster_bytes; // preserved for signature compatibility
@@ -507,6 +544,22 @@ pub fn write_windows_iso_to_usb_stream(iso_path: &str, usb_device: &str, cluster
     }
     let status = std::process::Command::new("rsync").args(install_args).status()?;
     if !status.success() { print_error(step, total_steps, "rsync INSTALL failed"); cleanup(); return Err(io::Error::new(io::ErrorKind::Other, "rsync INSTALL failed")); }
+    // Optional: apply unattend bypass if requested.
+    if let Some(flags) = bypass_flags {
+        let unattend_gen = UnattendGenerator::new(Architecture::X64, flags);
+        let unattend_path = unattend_gen.generate()?;
+        let boot_wim = boot_m.join("sources/boot.wim");
+        if boot_wim.exists() {
+            let wim_editor = WimEditor::new(&boot_wim);
+            let target_index = if wim_editor.verify_index(2).unwrap_or(false) { 2 } else { 1 };
+            println!("Injecting Autounattend.xml into boot.wim (index {})...", target_index);
+            wim_editor.add_file(target_index, &unattend_path, "/Autounattend.xml")?;
+            println!("Bypass unattend injected successfully.");
+        } else {
+            println!("Warning: boot.wim not found at {}, skipping unattend injection.", boot_wim.display());
+        }
+    }
+
     print_step(step, total_steps, "Cleaning up mounts; We're almost done, please wait..."); step += 1;
     cleanup();
     print_step(step, total_steps, "Windows USB creation completed.");
