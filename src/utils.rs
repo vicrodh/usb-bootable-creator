@@ -65,6 +65,14 @@ pub fn has_ntfs3g() -> bool {
         .unwrap_or(false)
 }
 
+/// Detailed package check result separating required and optional dependencies.
+pub struct PackageCheckResult {
+    pub missing_required: Vec<String>,
+    pub missing_optional: Vec<String>,
+    pub install_cmd_required: Option<String>,
+    pub install_cmd_optional: Option<String>,
+}
+
 /// Utility: Check if running as root
 pub fn is_root() -> bool {
     unsafe { libc::geteuid() == 0 }
@@ -378,18 +386,34 @@ pub fn is_windows_iso(iso_path: &str) -> Option<bool> {
 /// - Gentoo
 /// - NixOS
 pub fn check_required_packages() -> Option<(Vec<String>, String)> {
-    // List of required command names
+    check_required_packages_split().map(|res| {
+        let mut all_missing = res.missing_required.clone();
+        all_missing.extend(res.missing_optional.clone());
+        let cmd = res
+            .install_cmd_required
+            .or(res.install_cmd_optional)
+            .unwrap_or_else(|| "Please install missing packages".to_string());
+        (all_missing, cmd)
+    })
+}
+
+/// Check required (MVP Linux) and optional (Windows/persistence) packages separately.
+pub fn check_required_packages_split() -> Option<PackageCheckResult> {
+    // Required for MVP (Linux writing)
     let required_bins = vec![
         "lsblk",
         "dd",
         "mkfs.vfat",
         "mkfs.ntfs",
         "parted",
-        "sgdisk",
         "wipefs",
         "mount",
         "umount",
         "rsync",
+    ];
+    // Optional: Windows and persistence helpers
+    let optional_bins = vec![
+        "sgdisk",
         "wimlib-imagex",
     ];
 
@@ -408,6 +432,7 @@ pub fn check_required_packages() -> Option<(Vec<String>, String)> {
     arch_map.insert("mount", "util-linux");
     arch_map.insert("umount", "util-linux");
     arch_map.insert("rsync", "rsync");
+    arch_map.insert("wimlib-imagex", "wimlib");
     pkg_map.insert("arch", arch_map);
 
     // Debian & derivatives
@@ -422,6 +447,7 @@ pub fn check_required_packages() -> Option<(Vec<String>, String)> {
     debian_map.insert("mount", "mount");
     debian_map.insert("umount", "mount");
     debian_map.insert("rsync", "rsync");
+    debian_map.insert("wimlib-imagex", "wimtools");
     debian_map.insert("wimlib-imagex", "wimtools");
     pkg_map.insert("debian", debian_map);
 
@@ -438,6 +464,7 @@ pub fn check_required_packages() -> Option<(Vec<String>, String)> {
     ubuntu_map.insert("umount", "util-linux");
     ubuntu_map.insert("rsync", "rsync");
     ubuntu_map.insert("wimlib-imagex", "wimtools");
+    ubuntu_map.insert("wimlib-imagex", "wimtools");
     pkg_map.insert("ubuntu", ubuntu_map);
 
     // Fedora & derivatives
@@ -452,6 +479,7 @@ pub fn check_required_packages() -> Option<(Vec<String>, String)> {
     fedora_map.insert("mount", "util-linux");
     fedora_map.insert("umount", "util-linux");
     fedora_map.insert("rsync", "rsync");
+    fedora_map.insert("wimlib-imagex", "wimlib");
     fedora_map.insert("wimlib-imagex", "wimlib");
     pkg_map.insert("fedora", fedora_map);
 
@@ -468,6 +496,7 @@ pub fn check_required_packages() -> Option<(Vec<String>, String)> {
     opensuse_map.insert("umount", "util-linux");
     opensuse_map.insert("rsync", "rsync");
     opensuse_map.insert("wimlib-imagex", "wimlib");
+    opensuse_map.insert("wimlib-imagex", "wimlib");
     pkg_map.insert("opensuse", opensuse_map);
 
     // Alpine Linux
@@ -482,6 +511,7 @@ pub fn check_required_packages() -> Option<(Vec<String>, String)> {
     alpine_map.insert("mount", "mount");
     alpine_map.insert("umount", "umount");
     alpine_map.insert("rsync", "rsync");
+    alpine_map.insert("wimlib-imagex", "wimlib");
     alpine_map.insert("wimlib-imagex", "wimlib");
     pkg_map.insert("alpine", alpine_map);
 
@@ -498,6 +528,7 @@ pub fn check_required_packages() -> Option<(Vec<String>, String)> {
     void_map.insert("umount", "util-linux");
     void_map.insert("rsync", "rsync");
     void_map.insert("wimlib-imagex", "wimlib");
+    void_map.insert("wimlib-imagex", "wimlib");
     pkg_map.insert("void", void_map);
 
     // Gentoo
@@ -513,6 +544,7 @@ pub fn check_required_packages() -> Option<(Vec<String>, String)> {
     gentoo_map.insert("umount", "sys-apps/util-linux");
     gentoo_map.insert("rsync", "net-misc/rsync");
     gentoo_map.insert("wimlib-imagex", "app-arch/wimlib");
+    gentoo_map.insert("wimlib-imagex", "app-arch/wimlib");
     pkg_map.insert("gentoo", gentoo_map);
 
     // NixOS
@@ -527,6 +559,7 @@ pub fn check_required_packages() -> Option<(Vec<String>, String)> {
     nixos_map.insert("mount", "nixos.util-linux");
     nixos_map.insert("umount", "nixos.util-linux");
     nixos_map.insert("rsync", "nixos.rsync");
+    nixos_map.insert("wimlib-imagex", "nixos.wimlib");
     nixos_map.insert("wimlib-imagex", "nixos.wimlib");
     pkg_map.insert("nixos", nixos_map);
 
@@ -585,12 +618,15 @@ pub fn check_required_packages() -> Option<(Vec<String>, String)> {
     // and a generic instruction
     let default_pkg_map: HashMap<&str, &str> = required_bins
         .iter()
+        .chain(optional_bins.iter())
         .map(|&b| (b, b))
         .collect();
 
     // Collect missing packages (deduplicated and sorted)
     use std::collections::BTreeSet;
-    let mut missing_pkgs: BTreeSet<String> = BTreeSet::new();
+    let mut missing_required: BTreeSet<String> = BTreeSet::new();
+    let mut missing_optional: BTreeSet<String> = BTreeSet::new();
+
     for &bin in &required_bins {
         if which::which(bin).is_err() {
             let pkg_name = pkg_map
@@ -598,34 +634,81 @@ pub fn check_required_packages() -> Option<(Vec<String>, String)> {
                 .and_then(|m| m.get(bin))
                 .copied()
                 .unwrap_or_else(|| default_pkg_map.get(bin).copied().unwrap_or(bin));
-            missing_pkgs.insert(pkg_name.to_string());
+            missing_required.insert(pkg_name.to_string());
         }
     }
-    if missing_pkgs.is_empty() {
-        return None; // All required binaries are present
-    }
-    let pkgs_str = missing_pkgs.iter().cloned().collect::<Vec<_>>().join(" ");
-    // Construct the installation command based on distribution
-    let install_cmd = match distro {
-        "arch" => format!("sudo pacman -S --needed {}", pkgs_str),
-        "fedora" => format!("sudo dnf install -y {}", pkgs_str),
-        "ubuntu" => format!("sudo apt update && sudo apt install -y {}", pkgs_str),
-        "debian" => format!("sudo apt update && sudo apt install -y {}", pkgs_str),
-        "opensuse" => format!("sudo zypper install -y {}", pkgs_str),
-        "alpine" => format!("sudo apk add {}", pkgs_str),
-        "void" => format!("sudo xbps-install -S {}", pkgs_str),
-        "gentoo" => format!("sudo emerge --ask {}", pkgs_str),
-        "nixos" => {
-            let joined = missing_pkgs
-                .iter()
-                .map(|p| p.replace("nixos.", ""))
-                .collect::<Vec<_>>()
-                .join(" ");
-            format!("nix-env -iA nixos.{}", joined)
+
+    for &bin in &optional_bins {
+        if which::which(bin).is_err() {
+            let pkg_name = pkg_map
+                .get(distro)
+                .and_then(|m| m.get(bin))
+                .copied()
+                .unwrap_or_else(|| default_pkg_map.get(bin).copied().unwrap_or(bin));
+            missing_optional.insert(pkg_name.to_string());
         }
-        _ => format!("Please install: {}", missing_pkgs.iter().cloned().collect::<Vec<_>>().join(", ")),
+    }
+
+    if missing_required.is_empty() && missing_optional.is_empty() {
+        return None; // All required/optional binaries are present
+    }
+
+    let required_cmd = if missing_required.is_empty() {
+        None
+    } else {
+        let pkgs_str = missing_required.iter().cloned().collect::<Vec<_>>().join(" ");
+        Some(match distro {
+            "arch" => format!("sudo pacman -S --needed {}", pkgs_str),
+            "fedora" => format!("sudo dnf install -y {}", pkgs_str),
+            "ubuntu" => format!("sudo apt update && sudo apt install -y {}", pkgs_str),
+            "debian" => format!("sudo apt update && sudo apt install -y {}", pkgs_str),
+            "opensuse" => format!("sudo zypper install -y {}", pkgs_str),
+            "alpine" => format!("sudo apk add {}", pkgs_str),
+            "void" => format!("sudo xbps-install -S {}", pkgs_str),
+            "gentoo" => format!("sudo emerge --ask {}", pkgs_str),
+            "nixos" => {
+                let joined = missing_required
+                    .iter()
+                    .map(|p| p.replace("nixos.", ""))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                format!("nix-env -iA nixos.{}", joined)
+            }
+            _ => format!("Please install: {}", pkgs_str),
+        })
     };
-    Some((missing_pkgs.iter().cloned().collect(), install_cmd))
+
+    let optional_cmd = if missing_optional.is_empty() {
+        None
+    } else {
+        let pkgs_str = missing_optional.iter().cloned().collect::<Vec<_>>().join(" ");
+        Some(match distro {
+            "arch" => format!("sudo pacman -S --needed {}", pkgs_str),
+            "fedora" => format!("sudo dnf install -y {}", pkgs_str),
+            "ubuntu" => format!("sudo apt update && sudo apt install -y {}", pkgs_str),
+            "debian" => format!("sudo apt update && sudo apt install -y {}", pkgs_str),
+            "opensuse" => format!("sudo zypper install -y {}", pkgs_str),
+            "alpine" => format!("sudo apk add {}", pkgs_str),
+            "void" => format!("sudo xbps-install -S {}", pkgs_str),
+            "gentoo" => format!("sudo emerge --ask {}", pkgs_str),
+            "nixos" => {
+                let joined = missing_optional
+                    .iter()
+                    .map(|p| p.replace("nixos.", ""))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                format!("nix-env -iA nixos.{}", joined)
+            }
+            _ => format!("Please install: {}", pkgs_str),
+        })
+    };
+
+    Some(PackageCheckResult {
+        missing_required: missing_required.iter().cloned().collect(),
+        missing_optional: missing_optional.iter().cloned().collect(),
+        install_cmd_required: required_cmd,
+        install_cmd_optional: optional_cmd,
+    })
 }
 
 #[cfg(test)]
