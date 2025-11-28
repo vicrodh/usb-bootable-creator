@@ -1,5 +1,5 @@
 use gtk4::prelude::*;
-use gtk4::{Application, ApplicationWindow, Button, FileChooserAction, FileChooserDialog, FileFilter, Orientation, Box as GtkBox, Label, TextView, ProgressBar, MessageDialog, ButtonsType, MessageType, ResponseType};
+use gtk4::{Application, ApplicationWindow, Button, FileChooserAction, FileChooserDialog, FileFilter, Orientation, Box as GtkBox, Label, TextView, ProgressBar, MessageDialog, ButtonsType, MessageType};
 use glib::{self, Priority};
 use std::io;
 
@@ -41,10 +41,115 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
         .build();
 
     app.connect_activate(move |app| {
-        // Check for required packages before showing the main window
-        if let Some((_, install_cmd)) = crate::utils::check_required_packages() {
-            gui_dialogs::show_missing_packages_dialog_simple(None, install_cmd);
-        } else {
+        // Check for required/optional packages before showing the main window.
+        if let Some(pkg) = crate::utils::check_required_packages_split() {
+            // Build a simple window instead of a dialog to avoid transient issues before main UI.
+            let missing_win = ApplicationWindow::builder()
+                .application(app)
+                .title("Missing Packages")
+                .default_width(720)
+                .default_height(420)
+                .resizable(true)
+                .build();
+
+            let vbox = GtkBox::new(Orientation::Vertical, 12);
+            vbox.set_margin_top(16);
+            vbox.set_margin_bottom(16);
+            vbox.set_margin_start(16);
+            vbox.set_margin_end(16);
+
+            let intro = Label::new(Some("Some packages are missing to allow this app to work properly."));
+            intro.set_wrap(true);
+            vbox.append(&intro);
+
+            let mut text = String::new();
+            if !pkg.missing_required.is_empty() {
+                text.push_str("# Required packages (Linux USB creation)\n");
+                if let Some(cmd) = &pkg.install_cmd_required {
+                    text.push_str(cmd);
+                    text.push('\n');
+                }
+                text.push('\n');
+            } else {
+                text.push_str("# Required packages\n# All required packages are installed.\n\n");
+            }
+
+            text.push_str("# Optional packages (Windows / persistence)\n");
+            if !pkg.missing_optional.is_empty() {
+                if let Some(cmd) = &pkg.install_cmd_optional {
+                    text.push_str(cmd);
+                    text.push('\n');
+                }
+            } else {
+                text.push_str("# All optional packages are installed.\n");
+            }
+
+            let text_view = TextView::new();
+            text_view.set_editable(false);
+            text_view.set_cursor_visible(false);
+            text_view.set_monospace(true);
+            text_view.buffer().set_text(&text);
+            text_view.set_wrap_mode(gtk4::WrapMode::Word);
+
+            let scroll = gtk4::ScrolledWindow::builder()
+                .min_content_height(200)
+                .child(&text_view)
+                .build();
+            vbox.append(&scroll);
+
+            let copy_button = Button::with_label("Copy to clipboard");
+            {
+                let text_view_clone = text_view.clone();
+                copy_button.connect_clicked(move |_| {
+                    if let Some(display) = gtk4::gdk::Display::default() {
+                        let clipboard = display.clipboard();
+                        let buffer = text_view_clone.buffer();
+                        let start = buffer.start_iter();
+                        let end = buffer.end_iter();
+                        let content = buffer.text(&start, &end, false).to_string();
+                        clipboard.set_text(&content);
+                    }
+                });
+            }
+            vbox.append(&copy_button);
+
+            let ok_button = Button::with_label("OK");
+            {
+                let missing_required = !pkg.missing_required.is_empty();
+                let app_clone = app.clone();
+                let missing_win_clone = missing_win.clone();
+                ok_button.connect_clicked(move |_| {
+                    if missing_required {
+                        // Required packages missing: notify and exit.
+                        let app_quit = app_clone.clone();
+                        let dialog = MessageDialog::builder()
+                            .transient_for(&missing_win_clone)
+                            .modal(true)
+                            .message_type(MessageType::Warning)
+                            .buttons(ButtonsType::Ok)
+                            .text("Please install the required packages and restart the application.")
+                            .build();
+                        dialog.run_async(move |d, _| {
+                            d.close();
+                            app_quit.quit();
+                        });
+                    } else {
+                        missing_win_clone.close();
+                    }
+                });
+            }
+            vbox.append(&ok_button);
+
+            missing_win.set_child(Some(&vbox));
+            missing_win.show();
+
+            // If required packages are missing, do not continue to main window.
+            if !pkg.missing_required.is_empty() {
+                return;
+            }
+        }
+
+        {
             // Main window
             let window = ApplicationWindow::builder()
                 .application(app)

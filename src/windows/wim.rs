@@ -34,13 +34,14 @@ impl WimEditor {
             ));
         }
 
+        // Use wimlib-imagex add with explicit index and target path inside the WIM.
+        // Example: wimlib-imagex add boot.wim /tmp/Autounattend.xml /Autounattend.xml --index=2
         let status = Command::new("wimlib-imagex")
-            .arg("update")
+            .arg("add")
             .arg(&self.wim_path)
-            .arg(index.to_string())
-            .arg("--add")
             .arg(source_path)
             .arg(wim_target_path)
+            .arg(format!("--index={}", index))
             .status()?;
 
         if !status.success() {
@@ -67,4 +68,3 @@ impl WimEditor {
         Ok(output.status.success())
     }
 }
-
