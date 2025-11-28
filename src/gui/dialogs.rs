@@ -156,45 +156,6 @@ pub fn show_iso_file_chooser_dialog_app(
     dialog.show();
 }
 
-/// Show completion dialog after successful USB creation
-pub fn show_completion_dialog(
-    _parent: Option<&ApplicationWindow>,
-) {
-    println!("✓ USB creation complete!");
-}
-
-/// Show error dialog
-pub fn show_error_dialog(
-    _parent: Option<&ApplicationWindow>,
-    title: &str,
-    message: &str,
-) {
-    println!("ERROR - {}: {}", title, message);
-}
-
-/// Show progress dialog with progress bar
-pub fn show_progress_dialog(
-    _parent: Option<&ApplicationWindow>,
-    _title: &str,
-) -> (gtk4::Dialog, gtk4::ProgressBar, gtk4::Label) {
-    // TODO: Implement proper progress dialog
-    // For now, return minimal dialog
-    let dialog = gtk4::Dialog::new();
-
-    if let Some(p) = _parent {
-        dialog.set_transient_for(Some(p));
-    }
-    let vbox = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
-    let status_label = gtk4::Label::new(None);
-    let progress_bar = gtk4::ProgressBar::new();
-
-    dialog.content_area().append(&vbox);
-    vbox.append(&status_label);
-    vbox.append(&progress_bar);
-
-    (dialog, progress_bar, status_label)
-}
-
 /// Warning dialog for direct dd mode with Windows ISOs
 pub fn show_dd_mode_warning_dialog(parent: &ApplicationWindow) -> bool {
     let dialog = MessageDialog::builder()

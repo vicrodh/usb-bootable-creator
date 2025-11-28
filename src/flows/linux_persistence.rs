@@ -485,13 +485,6 @@ fn maybe_expand_gpt(device: &str) -> UsbCreatorResult<()> {
     Ok(())
 }
 
-/// Attempt to fix GPT using parted by auto-answering the prompt to use all space.
-fn fix_gpt_with_parted(_device: &str) -> UsbCreatorResult<()> {
-    Err(UsbCreatorError::validation_error(
-        "GPT appears truncated and sgdisk is missing; install gptfdisk (sgdisk) to repair GPT before adding persistence.",
-    ))
-}
-
 /// Best-effort udev settle to avoid racing kernel partition table updates
 fn settle_udev() {
     if let Ok(output) = Command::new("udevadm").args(["settle"]).output() {

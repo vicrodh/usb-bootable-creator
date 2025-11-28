@@ -30,35 +30,7 @@ impl std::io::Write for ChannelWriter {
     }
 }
 
-/// Write Linux ISO (use original working version)
-fn write_linux_iso_with_progress(iso_path: &str, usb_device: &str, _log_view: &TextView, _progress_bar: &ProgressBar) -> io::Result<()> {
-    // Use the original, working implementation
-    crate::flows::linux_flow::write_iso_to_usb(iso_path, usb_device, &mut std::io::Cursor::new(Vec::new()))
-}
 
-/// Write Windows ISO (use original working version)
-fn write_windows_iso_with_progress(iso_path: &str, usb_device: &str, _log_view: &TextView, _progress_bar: &ProgressBar) -> io::Result<()> {
-    // Use the original, working implementation
-    crate::flows::windows_flow::write_windows_iso_to_usb(iso_path, usb_device, false, &mut std::io::Cursor::new(Vec::new())).map(|_| ())
-}
-
-/// Format bytes in human readable format
-fn format_bytes(bytes: u64) -> String {
-    const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
-    let mut size = bytes as f64;
-    let mut unit_index = 0;
-
-    while size >= 1024.0 && unit_index < UNITS.len() - 1 {
-        size /= 1024.0;
-        unit_index += 1;
-    }
-
-    if unit_index == 0 {
-        format!("{} {}", bytes, UNITS[unit_index])
-    } else {
-        format!("{:.1} {}", size, UNITS[unit_index])
-    }
-}
 
 pub fn run_gui(needs_root: bool, is_flatpak: bool) {
     // Apply user's visual theme settings before creating GUI
@@ -135,9 +107,6 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
             let progress_bar = gui_widgets::create_progress_bar();
             vbox.append(&progress_bar);
 
-            // Clone os_label for use in write button
-            let os_label_write = os_label.clone();
-
             // --- Advanced options logic with toggle (refactored, reusable reset) ---
             let adv_open = std::rc::Rc::new(std::cell::Cell::new(false));
             let advanced_button_ref = std::rc::Rc::new(advanced_button.clone());
@@ -151,7 +120,6 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
                 let bypass_secure_boot_cb = bypass_secure_boot_cb.clone();
                 let bypass_ram_cb = bypass_ram_cb.clone();
                 let persistence_checkbox = persistence_checkbox.clone();
-                let table_type_combo = table_type_combo.clone();
                 let os_label = os_label.clone();
                 let advanced_button_ref = advanced_button_ref.clone();
                 let adv_open = adv_open.clone();
@@ -179,11 +147,9 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
                 let os_label = os_label.clone();
                 let windows_group = windows_group.clone();
                 let linux_group = linux_group.clone();
-                let cluster_combo = cluster_combo.clone();
                 let bypass_tpm_cb = bypass_tpm_cb.clone();
                 let bypass_secure_boot_cb = bypass_secure_boot_cb.clone();
                 let bypass_ram_cb = bypass_ram_cb.clone();
-                let persistence_checkbox = persistence_checkbox.clone();
                 let reset_advanced_options = reset_advanced_options.clone();
                 // Global elevation counter
                 static ELEVATION_COUNT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
