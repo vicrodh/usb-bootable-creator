@@ -1,5 +1,5 @@
 use gtk4::prelude::*;
-use gtk4::{Application, ApplicationWindow, Button, FileChooserAction, FileChooserDialog, FileFilter, Orientation, Box as GtkBox, Label, TextView, ProgressBar, MessageDialog, ButtonsType, MessageType, ResponseType};
+use gtk4::{Application, ApplicationWindow, Button, FileChooserAction, FileChooserDialog, FileFilter, Orientation, Box as GtkBox, Label, TextView, ProgressBar, MessageDialog, ButtonsType, MessageType};
 use glib::{self, Priority};
 use std::io;
 
@@ -13,35 +13,24 @@ enum WorkerMessage {
     Done(Result<(), String>),
 }
 
-/// Write Linux ISO (use original working version)
-fn write_linux_iso_with_progress(iso_path: &str, usb_device: &str, _log_view: &TextView, _progress_bar: &ProgressBar) -> io::Result<()> {
-    // Use the original, working implementation
-    crate::flows::linux_flow::write_iso_to_usb(iso_path, usb_device, &mut std::io::Cursor::new(Vec::new()))
+/// Writer that forwards log output to the GUI channel.
+struct ChannelWriter {
+    sender: glib::Sender<WorkerMessage>,
 }
 
-/// Write Windows ISO (use original working version)
-fn write_windows_iso_with_progress(iso_path: &str, usb_device: &str, _log_view: &TextView, _progress_bar: &ProgressBar) -> io::Result<()> {
-    // Use the original, working implementation
-    crate::flows::windows_flow::write_windows_iso_to_usb(iso_path, usb_device, false, &mut std::io::Cursor::new(Vec::new()))
-}
-
-/// Format bytes in human readable format
-fn format_bytes(bytes: u64) -> String {
-    const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
-    let mut size = bytes as f64;
-    let mut unit_index = 0;
-
-    while size >= 1024.0 && unit_index < UNITS.len() - 1 {
-        size /= 1024.0;
-        unit_index += 1;
+impl std::io::Write for ChannelWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let msg = String::from_utf8_lossy(buf).to_string();
+        let _ = self.sender.send(WorkerMessage::Log(msg));
+        Ok(buf.len())
     }
 
-    if unit_index == 0 {
-        format!("{} {}", bytes, UNITS[unit_index])
-    } else {
-        format!("{:.1} {}", size, UNITS[unit_index])
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
     }
 }
+
+
 
 pub fn run_gui(needs_root: bool, is_flatpak: bool) {
     // Apply user's visual theme settings before creating GUI
@@ -52,10 +41,115 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
         .build();
 
     app.connect_activate(move |app| {
-        // Check for required packages before showing the main window
-        if let Some((_, install_cmd)) = crate::utils::check_required_packages() {
-            gui_dialogs::show_missing_packages_dialog_simple(None, install_cmd);
-        } else {
+        // Check for required/optional packages before showing the main window.
+        if let Some(pkg) = crate::utils::check_required_packages_split() {
+            // Build a simple window instead of a dialog to avoid transient issues before main UI.
+            let missing_win = ApplicationWindow::builder()
+                .application(app)
+                .title("Missing Packages")
+                .default_width(720)
+                .default_height(420)
+                .resizable(true)
+                .build();
+
+            let vbox = GtkBox::new(Orientation::Vertical, 12);
+            vbox.set_margin_top(16);
+            vbox.set_margin_bottom(16);
+            vbox.set_margin_start(16);
+            vbox.set_margin_end(16);
+
+            let intro = Label::new(Some("Some packages are missing to allow this app to work properly."));
+            intro.set_wrap(true);
+            vbox.append(&intro);
+
+            let mut text = String::new();
+            if !pkg.missing_required.is_empty() {
+                text.push_str("# Required packages (Linux USB creation)\n");
+                if let Some(cmd) = &pkg.install_cmd_required {
+                    text.push_str(cmd);
+                    text.push('\n');
+                }
+                text.push('\n');
+            } else {
+                text.push_str("# Required packages\n# All required packages are installed.\n\n");
+            }
+
+            text.push_str("# Optional packages (Windows / persistence)\n");
+            if !pkg.missing_optional.is_empty() {
+                if let Some(cmd) = &pkg.install_cmd_optional {
+                    text.push_str(cmd);
+                    text.push('\n');
+                }
+            } else {
+                text.push_str("# All optional packages are installed.\n");
+            }
+
+            let text_view = TextView::new();
+            text_view.set_editable(false);
+            text_view.set_cursor_visible(false);
+            text_view.set_monospace(true);
+            text_view.buffer().set_text(&text);
+            text_view.set_wrap_mode(gtk4::WrapMode::Word);
+
+            let scroll = gtk4::ScrolledWindow::builder()
+                .min_content_height(200)
+                .child(&text_view)
+                .build();
+            vbox.append(&scroll);
+
+            let copy_button = Button::with_label("Copy to clipboard");
+            {
+                let text_view_clone = text_view.clone();
+                copy_button.connect_clicked(move |_| {
+                    if let Some(display) = gtk4::gdk::Display::default() {
+                        let clipboard = display.clipboard();
+                        let buffer = text_view_clone.buffer();
+                        let start = buffer.start_iter();
+                        let end = buffer.end_iter();
+                        let content = buffer.text(&start, &end, false).to_string();
+                        clipboard.set_text(&content);
+                    }
+                });
+            }
+            vbox.append(&copy_button);
+
+            let ok_button = Button::with_label("OK");
+            {
+                let missing_required = !pkg.missing_required.is_empty();
+                let app_clone = app.clone();
+                let missing_win_clone = missing_win.clone();
+                ok_button.connect_clicked(move |_| {
+                    if missing_required {
+                        // Required packages missing: notify and exit.
+                        let app_quit = app_clone.clone();
+                        let dialog = MessageDialog::builder()
+                            .transient_for(&missing_win_clone)
+                            .modal(true)
+                            .message_type(MessageType::Warning)
+                            .buttons(ButtonsType::Ok)
+                            .text("Please install the required packages and restart the application.")
+                            .build();
+                        dialog.run_async(move |d, _| {
+                            d.close();
+                            app_quit.quit();
+                        });
+                    } else {
+                        missing_win_clone.close();
+                    }
+                });
+            }
+            vbox.append(&ok_button);
+
+            missing_win.set_child(Some(&vbox));
+            missing_win.show();
+
+            // If required packages are missing, do not continue to main window.
+            if !pkg.missing_required.is_empty() {
+                return;
+            }
+        }
+
+        {
             // Main window
             let window = ApplicationWindow::builder()
                 .application(app)
@@ -94,7 +188,7 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
             vbox.append(&sep2);
 
             // --- Windows form group (hidden by default) ---
-            let (windows_group, cluster_combo) = gui_widgets::create_windows_advanced_options();
+            let (windows_group, cluster_combo, dd_checkbox, bypass_tpm_cb, bypass_secure_boot_cb, bypass_ram_cb) = gui_widgets::create_windows_advanced_options();
             vbox.append(&windows_group);
 
             // --- Linux form group (hidden by default) ---
@@ -118,9 +212,6 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
             let progress_bar = gui_widgets::create_progress_bar();
             vbox.append(&progress_bar);
 
-            // Clone os_label for use in write button
-            let os_label_write = os_label.clone();
-
             // --- Advanced options logic with toggle (refactored, reusable reset) ---
             let adv_open = std::rc::Rc::new(std::cell::Cell::new(false));
             let advanced_button_ref = std::rc::Rc::new(advanced_button.clone());
@@ -129,8 +220,11 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
                 let windows_group = windows_group.clone();
                 let linux_group = linux_group.clone();
                 let cluster_combo = cluster_combo.clone();
+                let dd_checkbox = dd_checkbox.clone();
+                let bypass_tpm_cb = bypass_tpm_cb.clone();
+                let bypass_secure_boot_cb = bypass_secure_boot_cb.clone();
+                let bypass_ram_cb = bypass_ram_cb.clone();
                 let persistence_checkbox = persistence_checkbox.clone();
-                let table_type_combo = table_type_combo.clone();
                 let os_label = os_label.clone();
                 let advanced_button_ref = advanced_button_ref.clone();
                 let adv_open = adv_open.clone();
@@ -138,6 +232,10 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
                     windows_group.set_visible(false);
                     linux_group.set_visible(false);
                     cluster_combo.set_active(Some(3));
+                    dd_checkbox.set_active(false);
+                    bypass_tpm_cb.set_active(false);
+                    bypass_secure_boot_cb.set_active(false);
+                    bypass_ram_cb.set_active(false);
                     persistence_checkbox.set_active(false);
                     os_label.set_text("");
                     advanced_button_ref.set_label("Advanced options");
@@ -154,8 +252,9 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
                 let os_label = os_label.clone();
                 let windows_group = windows_group.clone();
                 let linux_group = linux_group.clone();
-                let cluster_combo = cluster_combo.clone();
-                let persistence_checkbox = persistence_checkbox.clone();
+                let bypass_tpm_cb = bypass_tpm_cb.clone();
+                let bypass_secure_boot_cb = bypass_secure_boot_cb.clone();
+                let bypass_ram_cb = bypass_ram_cb.clone();
                 let reset_advanced_options = reset_advanced_options.clone();
                 // Global elevation counter
                 static ELEVATION_COUNT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
@@ -186,6 +285,9 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
                             linux_group.set_visible(false);
                             advanced_button_ref.set_label("Close advanced options");
                             adv_open.set(true);
+                            bypass_tpm_cb.set_active(false);
+                            bypass_secure_boot_cb.set_active(false);
+                            bypass_ram_cb.set_active(false);
                         },
                         Some(false) => {
                             println!("[DEBUG] [{}:{}] Detected Linux ISO (user-mount)", file!(), line!());
@@ -194,6 +296,9 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
                             linux_group.set_visible(true);
                             advanced_button_ref.set_label("Close advanced options");
                             adv_open.set(true);
+                            bypass_tpm_cb.set_active(false);
+                            bypass_secure_boot_cb.set_active(false);
+                            bypass_ram_cb.set_active(false);
                         },
                         None => {
                             println!("[DEBUG] [{}:{}] User-mount detection failed, requesting elevation...", file!(), line!());
@@ -210,6 +315,9 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
                                     linux_group.set_visible(false);
                                     advanced_button_ref.set_label("Close advanced options");
                                     adv_open.set(true);
+                                    bypass_tpm_cb.set_active(false);
+                                    bypass_secure_boot_cb.set_active(false);
+                                    bypass_ram_cb.set_active(false);
                                 },
                                 Some(false) => {
                                     println!("[DEBUG] [{}:{}] Detected Linux ISO (root mount)", file!(), line!());
@@ -218,6 +326,9 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
                                     linux_group.set_visible(true);
                                     advanced_button_ref.set_label("Close advanced options");
                                     adv_open.set(true);
+                                    bypass_tpm_cb.set_active(false);
+                                    bypass_secure_boot_cb.set_active(false);
+                                    bypass_ram_cb.set_active(false);
                                 },
                                 None => {
                                     println!("[DEBUG] [{}:{}] Could not detect OS type even with root", file!(), line!());
@@ -329,13 +440,39 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
                     let mut persistence_config: Option<PersistenceConfig> = None;
 
                     // Determine write mode and options
-                    let is_windows_mode = windows_group.is_visible();
+                    // Prefer explicit detection over UI visibility to avoid falling back to Linux when the Windows group is hidden.
+                    let detected_windows = crate::utils::is_windows_iso(&iso_path).unwrap_or(false);
+                    let is_windows_mode = if windows_group.is_visible() {
+                        true
+                    } else {
+                        detected_windows
+                    };
+
+                    let use_dd_mode = if is_windows_mode {
+                        dd_checkbox.is_active()
+                    } else {
+                        false
+                    };
+
+                    let bypass_tpm = if is_windows_mode { bypass_tpm_cb.is_active() } else { false };
+                    let bypass_secure_boot = if is_windows_mode { bypass_secure_boot_cb.is_active() } else { false };
+                    let bypass_ram = if is_windows_mode { bypass_ram_cb.is_active() } else { false };
 
                     if is_windows_mode {
                         let cluster_idx = cluster_combo.active().unwrap_or(3) as usize;
                         let cluster_sizes = [512, 1024, 2048, 4096, 8192, 16384, 32768, 65536];
                         let cluster_size = *cluster_sizes.get(cluster_idx).unwrap_or(&4096);
-                        log_text.push_str(&format!("  Mode: Windows (cluster size: {} bytes)\n", cluster_size));
+                        let mode_label = if use_dd_mode { "Windows (direct dd mode)" } else { "Windows" };
+                        log_text.push_str(&format!("  Mode: {} (cluster size: {} bytes)\n", mode_label, cluster_size));
+                        if bypass_tpm || bypass_secure_boot || bypass_ram {
+                            log_text.push_str(&format!(
+                                "  Bypass options: TPM={} SecureBoot={} RAM={}\n",
+                                bypass_tpm, bypass_secure_boot, bypass_ram
+                            ));
+                        }
+                    } else if detected_windows {
+                        // Windows detected but advanced panel not open; use default cluster size.
+                        log_text.push_str("  Mode: Windows (auto-detected, cluster size: 4096 bytes)\n");
                     } else if linux_group.is_visible() {
                         let persistence = persistence_checkbox.is_active();
                         if persistence {
@@ -413,6 +550,11 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
                     let device_path_clone = device_path.clone();
                     let persistence_config_clone = persistence_config.clone();
                     let is_windows_mode_clone = is_windows_mode;
+                    let use_dd_mode_clone = use_dd_mode;
+                    let bypass_tpm_clone = bypass_tpm;
+                    let bypass_secure_boot_clone = bypass_secure_boot;
+                    let bypass_ram_clone = bypass_ram;
+                    let window_for_dialog_clone = window_for_dialog.clone();
 
                     dialog.connect_response(move |dialog, response| {
                         dialog.close();
@@ -422,6 +564,16 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
                             progress_bar_clone.set_fraction(0.0);
                             progress_bar_clone.set_show_text(false);
                             return;
+                        }
+
+                        if is_windows_mode_clone && use_dd_mode_clone {
+                            // Show dd warning; cancel if user declines.
+                            if !gui_dialogs::show_dd_mode_warning_dialog(&window_for_dialog_clone) {
+                                write_button_clone.set_sensitive(true);
+                                progress_bar_clone.set_fraction(0.0);
+                                progress_bar_clone.set_show_text(false);
+                                return;
+                            }
                         }
 
                         let buffer = log_view_clone.buffer();
@@ -513,14 +665,45 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
                         std::thread::spawn(move || {
                             let send = |m| { let _ = sender_clone.send(m); };
                             if is_windows_mode_clone {
+                                if use_dd_mode_clone {
+                                    send(WorkerMessage::Log("Starting Windows direct dd write (not recommended)...".into()));
+                                    send(WorkerMessage::Status("Writing image (dd)...".into()));
+                                    let mut logger = ChannelWriter { sender: sender_clone.clone() };
+                                    let result = crate::flows::windows_flow::write_windows_iso_direct_dd(
+                                        &iso_for_thread,
+                                        &device_for_thread,
+                                        &mut logger
+                                    ).map_err(|e| e.to_string());
+                                    let _ = sender_clone.send(WorkerMessage::Done(result));
+                                    return;
+                                }
+
                                 send(WorkerMessage::Log("Starting Windows dual-partition write...".into()));
+                                if bypass_tpm_clone || bypass_secure_boot_clone || bypass_ram_clone {
+                                    send(WorkerMessage::Log(format!(
+                                        "Bypass options selected: TPM={} SecureBoot={} RAM={}",
+                                        bypass_tpm_clone, bypass_secure_boot_clone, bypass_ram_clone
+                                    )));
+                                }
                                 send(WorkerMessage::Status("Creating partitions...".into()));
-                                let result = crate::flows::windows_flow::write_windows_iso_to_usb(
+                                let mut logger = ChannelWriter { sender: sender_clone.clone() };
+                                let mut flags = crate::windows::unattend::UnattendFlags::empty();
+                                if bypass_tpm_clone {
+                                    flags |= crate::windows::unattend::UnattendFlags::BYPASS_TPM;
+                                }
+                                if bypass_secure_boot_clone {
+                                    flags |= crate::windows::unattend::UnattendFlags::BYPASS_SECURE_BOOT;
+                                }
+                                if bypass_ram_clone {
+                                    flags |= crate::windows::unattend::UnattendFlags::BYPASS_RAM;
+                                }
+                                let result = crate::flows::windows_flow::write_windows_iso_to_usb_with_bypass(
                                     &iso_for_thread,
                                     &device_for_thread,
                                     false,
-                                    &mut std::io::Cursor::new(Vec::new())
-                                ).map_err(|e| e.to_string());
+                                    if flags.is_empty() { None } else { Some(flags) },
+                                    &mut logger
+                                ).map(|_| ()).map_err(|e| e.to_string());
                                 let _ = sender_clone.send(WorkerMessage::Done(result));
                             } else {
                                 send(WorkerMessage::Log("Starting Linux ISO write...".into()));
@@ -555,4 +738,3 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
 
     app.run();
 }
-

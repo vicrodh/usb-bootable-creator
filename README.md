@@ -37,7 +37,7 @@ source $HOME/.cargo/env
 <summary><strong>Arch Linux / Manjaro / EndeavourOS / Artix / Garuda / SteamOS</strong></summary>
 
 ```sh
-sudo pacman -S --needed base-devel rustup gtk4 glib2 gio util-linux coreutils dosfstools ntfs-3g parted gptfdisk rsync polkit
+sudo pacman -S --needed base-devel rustup gtk4 glib2 gio util-linux coreutils dosfstools ntfs-3g parted gptfdisk rsync polkit wimlib
 ```
 </details>
 
@@ -46,7 +46,7 @@ sudo pacman -S --needed base-devel rustup gtk4 glib2 gio util-linux coreutils do
 
 ```sh
 sudo apt update
-sudo apt install -y build-essential rustup libgtk-4-dev libglib2.0-dev util-linux coreutils dosfstools ntfs-3g parted gdisk rsync policykit-1
+sudo apt install -y build-essential rustup libgtk-4-dev libglib2.0-dev util-linux coreutils dosfstools ntfs-3g parted gdisk rsync policykit-1 wimtools
 ```
 </details>
 
@@ -55,7 +55,7 @@ sudo apt install -y build-essential rustup libgtk-4-dev libglib2.0-dev util-linu
 
 ```sh
 sudo apt update
-sudo apt install -y build-essential rustup libgtk-4-dev libglib2.0-dev util-linux coreutils dosfstools ntfs-3g parted gdisk rsync policykit-1
+sudo apt install -y build-essential rustup libgtk-4-dev libglib2.0-dev util-linux coreutils dosfstools ntfs-3g parted gdisk rsync policykit-1 wimtools
 ```
 </details>
 
@@ -71,7 +71,7 @@ sudo dnf install -y @development-tools rust gtk4-devel glib2-devel gio-devel uti
 <summary><strong>openSUSE (Leap, Tumbleweed, GeckoLinux)</strong></summary>
 
 ```sh
-sudo zypper install -y rust gtk4-devel glib2-devel gio-devel util-linux coreutils dosfstools ntfs-3g parted gptfdisk rsync polkit
+sudo zypper install -y rust gtk4-devel glib2-devel gio-devel util-linux coreutils dosfstools ntfs-3g parted gptfdisk rsync polkit wimlib
 ```
 </details>
 
@@ -79,7 +79,7 @@ sudo zypper install -y rust gtk4-devel glib2-devel gio-devel util-linux coreutil
 <summary><strong>Alpine Linux</strong></summary>
 
 ```sh
-sudo apk add build-base rustup gtk4-dev glib-dev gio-dev lsblk coreutils dosfstools ntfs-3g-progs parted gptfdisk rsync polkit
+sudo apk add build-base rustup gtk4-dev glib-dev gio-dev lsblk coreutils dosfstools ntfs-3g-progs parted gptfdisk rsync polkit wimlib
 ```
 </details>
 
@@ -87,7 +87,7 @@ sudo apk add build-base rustup gtk4-dev glib-dev gio-dev lsblk coreutils dosfsto
 <summary><strong>Void Linux</strong></summary>
 
 ```sh
-sudo xbps-install -S base-devel rustup gtk4-devel glib-devel gio-devel util-linux coreutils dosfstools ntfs-3g parted gptfdisk rsync polkit
+sudo xbps-install -S base-devel rustup gtk4-devel glib-devel gio-devel util-linux coreutils dosfstools ntfs-3g parted gptfdisk rsync polkit wimlib
 ```
 </details>
 
@@ -95,7 +95,7 @@ sudo xbps-install -S base-devel rustup gtk4-devel glib-devel gio-devel util-linu
 <summary><strong>Gentoo</strong></summary>
 
 ```sh
-sudo emerge --ask sys-devel/gcc sys-devel/make sys-apps/util-linux sys-apps/coreutils sys-fs/dosfstools sys-fs/ntfs3g sys-block/parted sys-apps/gptfdisk net-misc/rsync sys-auth/polkit x11-libs/gtk+:4 dev-libs/glib dev-libs/gio dev-lang/rust
+sudo emerge --ask sys-devel/gcc sys-devel/make sys-apps/util-linux sys-apps/coreutils sys-fs/dosfstools sys-fs/ntfs3g sys-block/parted sys-apps/gptfdisk net-misc/rsync sys-auth/polkit x11-libs/gtk+:4 dev-libs/glib dev-libs/gio dev-lang/rust app-arch/wimlib
 ```
 </details>
 
@@ -103,7 +103,7 @@ sudo emerge --ask sys-devel/gcc sys-devel/make sys-apps/util-linux sys-apps/core
 <summary><strong>NixOS</strong></summary>
 
 ```sh
-nix-env -iA nixos.gcc nixos.make nixos.util-linux nixos.coreutils nixos.dosfstools nixos.ntfs3g nixos.parted nixos.gptfdisk nixos.rsync nixos.polkit nixos.gtk4 nixos.glib nixos.gio nixos.rustc
+nix-env -iA nixos.gcc nixos.make nixos.util-linux nixos.coreutils nixos.dosfstools nixos.ntfs3g nixos.parted nixos.gptfdisk nixos.rsync nixos.polkit nixos.gtk4 nixos.glib nixos.gio nixos.rustc nixos.wimlib
 ```
 </details>
 
@@ -114,7 +114,7 @@ Install the following packages (names may vary):
 - build tools (gcc, make, etc.)
 - rustup
 - gtk4, glib, gio development libraries
-- util-linux, coreutils, dosfstools, ntfs-3g, parted, rsync, polkit
+- util-linux, coreutils, dosfstools, ntfs-3g, parted, rsync, polkit, wimlib/wimtools
 
 </details>
 
@@ -155,6 +155,13 @@ cargo run --release
 - **Privilege escalation**: The app uses `pkexec` to run a helper binary (`cli_helper`) for writing to USB devices. You may be prompted for your password.
 - **Dependency check**: On startup, the app checks for required system packages and will show a dialog with install instructions if anything is missing.
 - **Windows support**: Native Windows support is planned but not yet implemented. For now, use on Linux.
+
+### Direct dd Mode (Advanced / Optional)
+- ⚠️ **Not recommended for Windows 10/11 UEFI**: This mode writes the ISO directly without creating the required GPT dual-partition layout (FAT32 BOOT + NTFS ESD-USB). It may fail to boot on modern UEFI systems or with files >4GB.
+- The GUI exposes this option under Windows advanced options with a warning dialog; it is off by default.
+- CLI helper: `cli_helper <iso> <device> --use-dd-mode` (primarily for testing).
+- Recommended: use the default dual-partition flow, which mirrors Microsoft’s Media Creation Tool behavior.
+- Reference: https://learn.microsoft.com/windows-hardware/manufacture/desktop/create-uefi-based-hard-drive-partitions
 
 ---
 

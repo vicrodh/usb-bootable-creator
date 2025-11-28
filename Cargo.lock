@@ -696,6 +696,7 @@ name = "rust-usb-bootable-creator"
 version = "0.2.0-alpha"
 dependencies = [
  "anyhow",
+ "bitflags",
  "gio",
  "glib 0.18.5",
  "gtk4",
