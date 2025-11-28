@@ -136,8 +136,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Performance improvements
 
 ### Phase 4 - Multi-platform Support
-- Windows compatibility (WSL)
-- macOS support
+- ~~Windows compatibility (WSL)~~
+- macOS support (evaluating arm64 compatibility for equivalent packages)
 
 ### Phase 5 - Quality Assurance
 - Comprehensive testing suite
