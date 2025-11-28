@@ -70,8 +70,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Calculates persistence start after existing partitions (parted/lsblk), aligns to 2048-sector boundary, and retries rereads (partprobe/partx/rereadpt/hdparm) with sfdisk fallback on MBR hybrids
 - **Partition table choice**
   - Advanced option to select GPT (default) or MBR for persistence; backend validates against the current device table
-- **Development guidelines in CLAUDE.md**
-- **Agent handoff protocols in AGENTS.md**
 - **Comprehensive development plan in PLAN.md**
 
 ### Fixed

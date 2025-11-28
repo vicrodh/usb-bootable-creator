@@ -178,6 +178,7 @@ cargo run --release
 - Persistence: detection and partition creation work, but boot-time persistence is still non-functional.
 - GUI improvements: modernize multi-step UX (e.g., clearer flows similar to Fedora Media Writer or Balena).
 - Download ISOs from the app (explore Rufus-like approach; consider APIs such as https://os.click/en).
+- Block data collection like Rufus does (evaluate feasibility with current unattend/wimlib approach or defer to offline registry bypass).
 
 ---
 
