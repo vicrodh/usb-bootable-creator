@@ -7,13 +7,13 @@ A modern, cross-platform USB bootable drive creator written in Rust with a GTK4 
 ---
 
 ## Features
-- **Modern GTK4 GUI**: Clean, responsive, and user-friendly interface.
+- **Modern GTK4 GUI**: Clean, responsive, user-friendly interface with modular dialogs and logging to the UI.
 - **Cross-platform**: Works on Linux (tested on major distros).
-- **Write Linux & Windows ISOs**: Handles both Linux and Windows bootable USB creation.
+- **Windows & Linux USB creation**: Dual-partition Windows flow (FAT32 BOOT + NTFS ESD-USB) with bypass flags (TPM/SB/RAM) via unattend; optional dd mode (off by default); Linux write support.
 - **Privilege Escalation**: Uses a secure helper binary with `pkexec` only when needed.
-- **Cluster Size Selection**: Choose NTFS cluster size for Windows ISOs.
-- **Dependency Check**: Detects missing system packages and provides install instructions (including GPT repair tool `sgdisk` for persistence).
-- **Auto-refresh Device List**: Detects USB device changes automatically.
+- **Dependency Check**: Required/optional package checks (wimlib, sgdisk, etc.) with install commands per distro.
+- **Cluster Size & NTFS options**: Cluster selection and optimized rsync/mount flags for throughput.
+- **Auto-refresh Device List**: Detects USB device changes automatically (lost during GUI modularization; likely needs re-wiring).
 
 ---
 
@@ -177,16 +177,19 @@ cargo run --release
 - Fix releases by target (DEB, RPM, Flatpak, etc.) to ensure all packaging flows are healthy.
 - Persistence: detection and partition creation work, but boot-time persistence is still non-functional.
 - GUI improvements: modernize multi-step UX (e.g., clearer flows similar to Fedora Media Writer or Balena).
-- Download ISOs from the app (explore Rufus-like approach; consider APIs such as https://os.click/en).
+- Download ISOs from the app (explore Rufus-like approach; consider APIs such as https://os.click/en, ask owner for API access).
 - Block data collection like Rufus does (evaluate feasibility with current unattend/wimlib approach or defer to offline registry bypass).
 
 ---
 
 ## Project Structure
-- `src/gui.rs` — Main GTK4 GUI logic
-- `src/utils.rs` — Device listing, privilege escalation, OS detection, dependency check
-- `src/flows/` — ISO writing logic for Linux and Windows
+- `src/main.rs` — GUI entrypoint and privilege handling
+- `src/gui/` — GTK4 UI (app.rs, dialogs.rs, widgets.rs) with logging and advanced options
+- `src/flows/` — Linux and Windows write flows (dual-partition Windows, optional dd, bypass injection)
+- `src/windows/` — Unattend generation and WIM editing (wimlib)
+- `src/utils.rs` — Device detection, dependency checks, environment helpers
 - `src/bin/cli_helper.rs` — Helper binary for privileged operations
+- `scripts/` — Benchmark and helper scripts
 - `Cargo.toml` — Project manifest and dependencies
 
 ---

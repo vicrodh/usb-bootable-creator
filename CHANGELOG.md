@@ -8,11 +8,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased - Windows Optimization Planning Phase]
 
 ### Added
-- **Windows Optimization Documentation**
-  - `PLAN_WINDOWS_OPTIMIZATION.md` - Comprehensive 3-phase optimization plan for Windows USB creation
-  - `WINDOWS_OPTIMIZATION_RESEARCH.md` - Complete analysis of Rufus bypass techniques (TPM, Secure Boot, RAM)
-  - `WINDOWS_OPTIMIZATION_TASKS.md` - Detailed task breakdown for GPT-5.1-Codex implementation (13 tasks across 3 phases)
-  - `HANDOFF_WINDOWS_OPTIMIZATION.md` - State management and handoff protocol for Windows optimization work
 - **Rufus Code Analysis**
   - Analyzed `./rufus/src/wue.c` (Windows User Experience) - 1103 lines
   - Documented registry-based bypass technique: `HKLM\SYSTEM\Setup\LabConfig` keys
