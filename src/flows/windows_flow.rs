@@ -193,6 +193,14 @@ pub fn write_windows_iso_to_usb_with_bypass(
     bypass_flags: Option<UnattendFlags>,
     log: &mut dyn Write,
 ) -> io::Result<WindowsFlowMetrics> {
+    if let Some(ref flags) = bypass_flags {
+        if !flags.is_empty() && !WimEditor::has_wimlib() {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                "wimlib-imagex is required for bypass; install wimlib/wimtools.",
+            ));
+        }
+    }
     let _ = use_wim; // Placeholder to maintain signature parity until WIM handling is implemented.
     let overall_start = Instant::now();
     let mut metrics = WindowsFlowMetrics::default();
@@ -405,6 +413,14 @@ pub fn write_windows_iso_to_usb_stream_with_bypass(
     cluster_bytes: u64,
     bypass_flags: Option<UnattendFlags>,
 ) -> io::Result<()> {
+    if let Some(ref flags) = bypass_flags {
+        if !flags.is_empty() && !WimEditor::has_wimlib() {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                "wimlib-imagex is required for bypass; install wimlib/wimtools.",
+            ));
+        }
+    }
     let total_steps = 15;
     let mut step = 1;
     let _ = cluster_bytes; // preserved for signature compatibility
