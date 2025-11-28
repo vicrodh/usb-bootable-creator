@@ -38,6 +38,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Detect device physical block size and apply tuned FAT32 cluster size (`-s`) and NTFS cluster size (`-c`) during formatting (streaming and standard flows)
 - **Windows optimization - Task 1.5 (benchmarking)**
   - Added `scripts/benchmark_windows.sh` to measure end-to-end creation time across multiple iterations
+- **Windows optimization - Task 2.1 (dd wrapper, optional)**
+  - Added `write_windows_iso_direct_dd` as an opt-in path with safeguards against system disks, capacity checks, and clear warnings
+- **Windows optimization - Task 2.2 (GUI/CLI dd toggle)**
+  - GUI checkbox under Windows advanced options with warning dialog; CLI helper supports `--use-dd-mode`
+- **Windows optimization - Task 2.3 (documentation)**
+  - README section describing dd mode limitations, risks, and Microsoft reference link
 - **Complete GUI Modular Architecture**
   - `src/gui/widgets.rs` - 17 widget creation functions for ISO selection, device selection, progress bars, and advanced options
   - `src/gui/events.rs` - 3 event handler functions for button clicks, device refresh, and write operations

@@ -156,6 +156,13 @@ cargo run --release
 - **Dependency check**: On startup, the app checks for required system packages and will show a dialog with install instructions if anything is missing.
 - **Windows support**: Native Windows support is planned but not yet implemented. For now, use on Linux.
 
+### Direct dd Mode (Advanced / Optional)
+- ⚠️ **Not recommended for Windows 10/11 UEFI**: This mode writes the ISO directly without creating the required GPT dual-partition layout (FAT32 BOOT + NTFS ESD-USB). It may fail to boot on modern UEFI systems or with files >4GB.
+- The GUI exposes this option under Windows advanced options with a warning dialog; it is off by default.
+- CLI helper: `cli_helper <iso> <device> --use-dd-mode` (primarily for testing).
+- Recommended: use the default dual-partition flow, which mirrors Microsoft’s Media Creation Tool behavior.
+- Reference: https://learn.microsoft.com/windows-hardware/manufacture/desktop/create-uefi-based-hard-drive-partitions
+
 ---
 
 ## Troubleshooting

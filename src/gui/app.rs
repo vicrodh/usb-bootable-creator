@@ -111,7 +111,7 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
             vbox.append(&sep2);
 
             // --- Windows form group (hidden by default) ---
-            let (windows_group, cluster_combo) = gui_widgets::create_windows_advanced_options();
+            let (windows_group, cluster_combo, dd_checkbox) = gui_widgets::create_windows_advanced_options();
             vbox.append(&windows_group);
 
             // --- Linux form group (hidden by default) ---
@@ -146,6 +146,7 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
                 let windows_group = windows_group.clone();
                 let linux_group = linux_group.clone();
                 let cluster_combo = cluster_combo.clone();
+                let dd_checkbox = dd_checkbox.clone();
                 let persistence_checkbox = persistence_checkbox.clone();
                 let table_type_combo = table_type_combo.clone();
                 let os_label = os_label.clone();
@@ -155,6 +156,7 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
                     windows_group.set_visible(false);
                     linux_group.set_visible(false);
                     cluster_combo.set_active(Some(3));
+                    dd_checkbox.set_active(false);
                     persistence_checkbox.set_active(false);
                     os_label.set_text("");
                     advanced_button_ref.set_label("Advanced options");
@@ -354,11 +356,18 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
                         detected_windows
                     };
 
+                    let use_dd_mode = if is_windows_mode {
+                        dd_checkbox.is_active()
+                    } else {
+                        false
+                    };
+
                     if is_windows_mode {
                         let cluster_idx = cluster_combo.active().unwrap_or(3) as usize;
                         let cluster_sizes = [512, 1024, 2048, 4096, 8192, 16384, 32768, 65536];
                         let cluster_size = *cluster_sizes.get(cluster_idx).unwrap_or(&4096);
-                        log_text.push_str(&format!("  Mode: Windows (cluster size: {} bytes)\n", cluster_size));
+                        let mode_label = if use_dd_mode { "Windows (direct dd mode)" } else { "Windows" };
+                        log_text.push_str(&format!("  Mode: {} (cluster size: {} bytes)\n", mode_label, cluster_size));
                     } else if detected_windows {
                         // Windows detected but advanced panel not open; use default cluster size.
                         log_text.push_str("  Mode: Windows (auto-detected, cluster size: 4096 bytes)\n");
@@ -439,6 +448,7 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
                     let device_path_clone = device_path.clone();
                     let persistence_config_clone = persistence_config.clone();
                     let is_windows_mode_clone = is_windows_mode;
+                    let use_dd_mode_clone = use_dd_mode;
 
                     dialog.connect_response(move |dialog, response| {
                         dialog.close();
@@ -448,6 +458,18 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
                             progress_bar_clone.set_fraction(0.0);
                             progress_bar_clone.set_show_text(false);
                             return;
+                        }
+
+                        if is_windows_mode_clone && use_dd_mode_clone {
+                            // Show dd warning; cancel if user declines.
+                            if let Some(window_parent) = window_for_dialog.upgrade() {
+                                if !gui_dialogs::show_dd_mode_warning_dialog(&window_parent) {
+                                    write_button_clone.set_sensitive(true);
+                                    progress_bar_clone.set_fraction(0.0);
+                                    progress_bar_clone.set_show_text(false);
+                                    return;
+                                }
+                            }
                         }
 
                         let buffer = log_view_clone.buffer();
@@ -539,6 +561,19 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
                         std::thread::spawn(move || {
                             let send = |m| { let _ = sender_clone.send(m); };
                             if is_windows_mode_clone {
+                                if use_dd_mode_clone {
+                                    send(WorkerMessage::Log("Starting Windows direct dd write (not recommended)...".into()));
+                                    send(WorkerMessage::Status("Writing image (dd)...".into()));
+                                    let mut logger = ChannelWriter { sender: sender_clone.clone() };
+                                    let result = crate::flows::windows_flow::write_windows_iso_direct_dd(
+                                        &iso_for_thread,
+                                        &device_for_thread,
+                                        &mut logger
+                                    ).map_err(|e| e.to_string());
+                                    let _ = sender_clone.send(WorkerMessage::Done(result));
+                                    return;
+                                }
+
                                 send(WorkerMessage::Log("Starting Windows dual-partition write...".into()));
                                 send(WorkerMessage::Status("Creating partitions...".into()));
                                 let mut logger = ChannelWriter { sender: sender_clone.clone() };

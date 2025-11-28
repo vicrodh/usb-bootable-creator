@@ -87,7 +87,7 @@ pub fn create_device_selection_widget() -> (GtkBox, ComboBoxText, Button) {
 }
 
 /// Create Windows advanced options with title bar and cluster size selection
-pub fn create_windows_advanced_options() -> (GtkBox, ComboBoxText) {
+pub fn create_windows_advanced_options() -> (GtkBox, ComboBoxText, CheckButton) {
     let windows_group = GtkBox::new(Orientation::Vertical, 8);
     windows_group.set_visible(false);
 
@@ -124,7 +124,15 @@ pub fn create_windows_advanced_options() -> (GtkBox, ComboBoxText) {
     windows_group.append(&cluster_label);
     windows_group.append(&cluster_combo);
 
-    (windows_group, cluster_combo)
+    // Optional dd mode (not recommended)
+    let dd_checkbox = CheckButton::builder()
+        .label("Use direct dd mode (⚠️ not recommended for Windows 10/11 UEFI)")
+        .tooltip_text("Writes the ISO directly without the required dual-partition layout; may not boot on modern UEFI systems.")
+        .build();
+    dd_checkbox.set_active(false);
+    windows_group.append(&dd_checkbox);
+
+    (windows_group, cluster_combo, dd_checkbox)
 }
 
 /// Create Linux advanced options with title bar, persistence checkbox, and partition table type

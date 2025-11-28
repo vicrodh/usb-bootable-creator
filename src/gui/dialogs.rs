@@ -187,3 +187,28 @@ pub fn show_progress_dialog(
 
     (dialog, progress_bar, status_label)
 }
+
+/// Warning dialog for direct dd mode with Windows ISOs
+pub fn show_dd_mode_warning_dialog(parent: &ApplicationWindow) -> bool {
+    let dialog = MessageDialog::builder()
+        .transient_for(parent)
+        .modal(true)
+        .message_type(MessageType::Warning)
+        .buttons(ButtonsType::YesNo)
+        .text("Direct dd mode is NOT recommended for Windows 10/11")
+        .secondary_text(
+            "This mode writes the ISO directly without creating the required GPT dual-partition layout (FAT32 BOOT + NTFS ESD-USB).\n\n\
+             Consequences:\n\
+             • May fail to boot on UEFI systems\n\
+             • Issues with files >4GB on FAT32-only layouts\n\
+             • Not equivalent to Media Creation Tool behavior\n\n\
+             Recommended: Use the default dual-partition mode.\n\n\
+             Reference: Microsoft UEFI/GPT guidance\n\
+             https://learn.microsoft.com/windows-hardware/manufacture/desktop/create-uefi-based-hard-drive-partitions"
+        )
+        .build();
+
+    let response = dialog.run();
+    dialog.close();
+    response == ResponseType::Yes
+}

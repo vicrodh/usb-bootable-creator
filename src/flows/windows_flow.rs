@@ -118,6 +118,68 @@ fn unmount_device_mounts(device: &str, log: &mut dyn Write) -> io::Result<()> {
     Ok(())
 }
 
+fn get_device_size_bytes(device: &str) -> io::Result<u64> {
+    let output = Command::new("blockdev")
+        .args(["--getsize64", device])
+        .output()?;
+    if !output.status.success() {
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            "Failed to get device size with blockdev",
+        ));
+    }
+    let size_str = String::from_utf8_lossy(&output.stdout);
+    size_str
+        .trim()
+        .parse::<u64>()
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("Invalid device size: {}", e)))
+}
+
+/// Optional direct-dd write for Windows ISOs (not recommended).
+pub fn write_windows_iso_direct_dd(
+    iso_path: &str,
+    usb_device: &str,
+    log: &mut dyn Write,
+) -> io::Result<()> {
+    writeln!(log, "WARNING: Using direct dd mode. This may not boot on Windows 10/11 UEFI systems.")?;
+    writeln!(log, "Reference: https://learn.microsoft.com/windows-hardware/manufacture/desktop/create-uefi-based-hard-drive-partitions")?;
+
+    ensure_not_system_device(usb_device, log)?;
+    unmount_device_mounts(usb_device, log)?;
+
+    let iso_size = fs::metadata(iso_path)?.len();
+    let dev_size = get_device_size_bytes(usb_device)?;
+    if iso_size > dev_size {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "ISO is larger than device capacity",
+        ));
+    }
+
+    writeln!(log, "Writing ISO to device with dd...")?;
+    let status = Command::new("dd")
+        .args([
+            &format!("if={}", iso_path),
+            &format!("of={}", usb_device),
+            "bs=4M",
+            "conv=fdatasync",
+            "status=progress",
+        ])
+        .stdout(std::process::Stdio::inherit())
+        .stderr(std::process::Stdio::inherit())
+        .status()?;
+
+    if !status.success() {
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            "dd failed",
+        ));
+    }
+
+    writeln!(log, "Direct dd write completed. Note: UEFI boot may fail for Windows 10/11.")?;
+    Ok(())
+}
+
 pub fn write_windows_iso_to_usb(iso_path: &str, usb_device: &str, use_wim: bool, log: &mut dyn Write) -> io::Result<WindowsFlowMetrics> {
     let _ = use_wim; // Placeholder to maintain signature parity until WIM handling is implemented.
     let overall_start = Instant::now();
