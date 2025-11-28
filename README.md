@@ -2,7 +2,7 @@
 
 A modern, cross-platform USB bootable drive creator written in Rust with a GTK4 GUI. Easily write Linux or Windows ISO images to USB drives with real-time progress, robust error handling, and a polished, user-friendly interface.
 
-[Read CONTRIBUTING.md before submitting changes / Lee CONTRIBUTING.md antes de enviar cambios.](CONTRIBUTING.md)
+[Read CONTRIBUTING.md before submitting changes.](CONTRIBUTING.md)
 
 ---
 
