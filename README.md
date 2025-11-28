@@ -2,6 +2,8 @@
 
 A modern, cross-platform USB bootable drive creator written in Rust with a GTK4 GUI. Easily write Linux or Windows ISO images to USB drives with real-time progress, robust error handling, and a polished, user-friendly interface.
 
+[Read CONTRIBUTING.md before submitting changes / Lee CONTRIBUTING.md antes de enviar cambios.](CONTRIBUTING.md)
+
 ---
 
 ## Features
@@ -170,6 +172,12 @@ cargo run --release
 - If USB devices do not appear, try re-plugging the device or running the app with appropriate permissions.
 - For issues with writing Windows ISOs, ensure `wimlib-imagex` is installed.
 - For any other issues, check the real-time log output for details.
+
+## TODO
+- Fix releases by target (DEB, RPM, Flatpak, etc.) to ensure all packaging flows are healthy.
+- Persistence: detection and partition creation work, but boot-time persistence is still non-functional.
+- GUI improvements: modernize multi-step UX (e.g., clearer flows similar to Fedora Media Writer or Balena).
+- Download ISOs from the app (explore Rufus-like approach; consider APIs such as https://os.click/en).
 
 ---
 
