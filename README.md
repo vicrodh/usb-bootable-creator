@@ -46,7 +46,7 @@ sudo pacman -S --needed base-devel rustup gtk4 glib2 gio util-linux coreutils do
 
 ```sh
 sudo apt update
-sudo apt install -y build-essential rustup libgtk-4-dev libglib2.0-dev util-linux coreutils dosfstools ntfs-3g parted gdisk rsync policykit-1
+sudo apt install -y build-essential rustup libgtk-4-dev libglib2.0-dev util-linux coreutils dosfstools ntfs-3g parted gdisk rsync policykit-1 wimtools
 ```
 </details>
 
@@ -95,7 +95,7 @@ sudo xbps-install -S base-devel rustup gtk4-devel glib-devel gio-devel util-linu
 <summary><strong>Gentoo</strong></summary>
 
 ```sh
-sudo emerge --ask sys-devel/gcc sys-devel/make sys-apps/util-linux sys-apps/coreutils sys-fs/dosfstools sys-fs/ntfs3g sys-block/parted sys-apps/gptfdisk net-misc/rsync sys-auth/polkit x11-libs/gtk+:4 dev-libs/glib dev-libs/gio dev-lang/rust
+sudo emerge --ask sys-devel/gcc sys-devel/make sys-apps/util-linux sys-apps/coreutils sys-fs/dosfstools sys-fs/ntfs3g sys-block/parted sys-apps/gptfdisk net-misc/rsync sys-auth/polkit x11-libs/gtk+:4 dev-libs/glib dev-libs/gio dev-lang/rust app-arch/wimlib
 ```
 </details>
 
@@ -103,7 +103,7 @@ sudo emerge --ask sys-devel/gcc sys-devel/make sys-apps/util-linux sys-apps/core
 <summary><strong>NixOS</strong></summary>
 
 ```sh
-nix-env -iA nixos.gcc nixos.make nixos.util-linux nixos.coreutils nixos.dosfstools nixos.ntfs3g nixos.parted nixos.gptfdisk nixos.rsync nixos.polkit nixos.gtk4 nixos.glib nixos.gio nixos.rustc
+nix-env -iA nixos.gcc nixos.make nixos.util-linux nixos.coreutils nixos.dosfstools nixos.ntfs3g nixos.parted nixos.gptfdisk nixos.rsync nixos.polkit nixos.gtk4 nixos.glib nixos.gio nixos.rustc nixos.wimlib
 ```
 </details>
 
@@ -114,7 +114,7 @@ Install the following packages (names may vary):
 - build tools (gcc, make, etc.)
 - rustup
 - gtk4, glib, gio development libraries
-- util-linux, coreutils, dosfstools, ntfs-3g, parted, rsync, polkit
+- util-linux, coreutils, dosfstools, ntfs-3g, parted, rsync, polkit, wimlib/wimtools
 
 </details>
 

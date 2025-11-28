@@ -390,6 +390,7 @@ pub fn check_required_packages() -> Option<(Vec<String>, String)> {
         "mount",
         "umount",
         "rsync",
+        "wimlib-imagex",
     ];
 
     // Map each binary to the package name per distribution
@@ -421,6 +422,7 @@ pub fn check_required_packages() -> Option<(Vec<String>, String)> {
     debian_map.insert("mount", "mount");
     debian_map.insert("umount", "mount");
     debian_map.insert("rsync", "rsync");
+    debian_map.insert("wimlib-imagex", "wimtools");
     pkg_map.insert("debian", debian_map);
 
     // Ubuntu & derivatives
@@ -435,6 +437,7 @@ pub fn check_required_packages() -> Option<(Vec<String>, String)> {
     ubuntu_map.insert("mount", "util-linux");
     ubuntu_map.insert("umount", "util-linux");
     ubuntu_map.insert("rsync", "rsync");
+    ubuntu_map.insert("wimlib-imagex", "wimtools");
     pkg_map.insert("ubuntu", ubuntu_map);
 
     // Fedora & derivatives
@@ -449,6 +452,7 @@ pub fn check_required_packages() -> Option<(Vec<String>, String)> {
     fedora_map.insert("mount", "util-linux");
     fedora_map.insert("umount", "util-linux");
     fedora_map.insert("rsync", "rsync");
+    fedora_map.insert("wimlib-imagex", "wimlib");
     pkg_map.insert("fedora", fedora_map);
 
     // openSUSE & derivatives
@@ -463,6 +467,7 @@ pub fn check_required_packages() -> Option<(Vec<String>, String)> {
     opensuse_map.insert("mount", "util-linux");
     opensuse_map.insert("umount", "util-linux");
     opensuse_map.insert("rsync", "rsync");
+    opensuse_map.insert("wimlib-imagex", "wimlib");
     pkg_map.insert("opensuse", opensuse_map);
 
     // Alpine Linux
@@ -477,6 +482,7 @@ pub fn check_required_packages() -> Option<(Vec<String>, String)> {
     alpine_map.insert("mount", "mount");
     alpine_map.insert("umount", "umount");
     alpine_map.insert("rsync", "rsync");
+    alpine_map.insert("wimlib-imagex", "wimlib");
     pkg_map.insert("alpine", alpine_map);
 
     // Void Linux
@@ -491,6 +497,7 @@ pub fn check_required_packages() -> Option<(Vec<String>, String)> {
     void_map.insert("mount", "util-linux");
     void_map.insert("umount", "util-linux");
     void_map.insert("rsync", "rsync");
+    void_map.insert("wimlib-imagex", "wimlib");
     pkg_map.insert("void", void_map);
 
     // Gentoo
@@ -505,6 +512,7 @@ pub fn check_required_packages() -> Option<(Vec<String>, String)> {
     gentoo_map.insert("mount", "sys-apps/util-linux");
     gentoo_map.insert("umount", "sys-apps/util-linux");
     gentoo_map.insert("rsync", "net-misc/rsync");
+    gentoo_map.insert("wimlib-imagex", "app-arch/wimlib");
     pkg_map.insert("gentoo", gentoo_map);
 
     // NixOS
@@ -519,6 +527,7 @@ pub fn check_required_packages() -> Option<(Vec<String>, String)> {
     nixos_map.insert("mount", "nixos.util-linux");
     nixos_map.insert("umount", "nixos.util-linux");
     nixos_map.insert("rsync", "nixos.rsync");
+    nixos_map.insert("wimlib-imagex", "nixos.wimlib");
     pkg_map.insert("nixos", nixos_map);
 
     // Read /etc/os-release to detect distribution
