@@ -112,8 +112,10 @@ EOF
 
           LINUXDEPLOY="$PWD/linuxdeploy-x86_64.AppImage" \
           APPIMAGE_EXTRACT_AND_RUN=1 \
+          APPIMAGE_NAME="majusb-creator-x86_64.AppImage"
           ./linuxdeploy-x86_64.AppImage --appdir "$APPDIR" --plugin gtk --output appimage
           mv MajUSB_Bootable_Creator*.AppImage dist/ || mv *.AppImage dist/
+          for f in dist/*.AppImage; do mv "$f" "dist/$APPIMAGE_NAME"; break; done
 
       - name: Archive PKGBUILD and sources
         run: |
