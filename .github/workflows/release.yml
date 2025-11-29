@@ -127,6 +127,14 @@ jobs:
           ln -sf usr/bin/rust-usb-bootable-creator "$APPDIR"/rust-usb-bootable-creator
           ln -sf usr/bin/rust-usb-bootable-creator.bin "$APPDIR"/rust-usb-bootable-creator.bin
 
+          wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          wget -q https://raw.githubusercontent.com/linuxdeploy/linuxdeploy-plugin-gtk/master/linuxdeploy-plugin-gtk.sh
+          chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-gtk.sh
+
+          # Deploy deps only; we'll run appimagetool ourselves.
+          ./linuxdeploy-x86_64.AppImage --appdir "$APPDIR" --plugin gtk
+
+          # Ensure custom AppRun after linuxdeploy touched the AppDir
           cat > "$APPDIR"/AppRun <<'EOF'
           #!/bin/sh
           HERE="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
@@ -135,14 +143,11 @@ jobs:
           EOF
           chmod +x "$APPDIR"/AppRun
 
-          wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
-          wget -q https://raw.githubusercontent.com/linuxdeploy/linuxdeploy-plugin-gtk/master/linuxdeploy-plugin-gtk.sh
-          chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-gtk.sh
+          wget -q https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool-x86_64.AppImage
 
           APPIMAGE_NAME="majusb-creator-x86_64.AppImage"
-          ./linuxdeploy-x86_64.AppImage --appdir "$APPDIR" --plugin gtk --custom-apprun "$APPDIR/AppRun" --output appimage
-          mv MajUSB_Bootable_Creator*.AppImage dist/ || mv *.AppImage dist/
-          for f in dist/*.AppImage; do mv "$f" "dist/$APPIMAGE_NAME"; break; done
+          ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 ./appimagetool-x86_64.AppImage "$APPDIR" "dist/$APPIMAGE_NAME"
 
       - name: Archive PKGBUILD and sources
         run: |
