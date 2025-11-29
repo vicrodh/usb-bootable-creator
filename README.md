@@ -1,6 +1,13 @@
-![MajUSB logo](.github/docs/icon.svg)
+<div align="center">
+  <img src=".github/docs/icon.svg" width="128" height="128" alt="MajUSB logo" />
 
-# MajUSB Bootable Creator
+  # MajUSB Bootable Creator
+
+  [![Build and Package](https://github.com/vicrodh/usb-bootable-creator/actions/workflows/release.yml/badge.svg)](https://github.com/vicrodh/usb-bootable-creator/actions/workflows/release.yml)
+  ![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
+  ![Rust](https://img.shields.io/badge/Rust-2024%20edition-orange)
+  ![GTK4](https://img.shields.io/badge/GTK-4.x-blueviolet)
+</div>
 
 A modern, cross-platform USB bootable drive creator written in Rust with a GTK4 GUI. Easily write Linux or Windows ISO images to USB drives with real-time progress, robust error handling, and a polished, user-friendly interface.
 
