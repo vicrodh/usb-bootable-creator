@@ -38,7 +38,8 @@ description = """
 MajUSB is a GTK4-based graphical tool to create bootable USB drives for Linux and Windows distributions.
 It supports UEFI/GPT layouts and includes CLI utilities for automation.
 """
-targets = { "x86_64-unknown-linux-gnu" = {} }
+[package.metadata.rpm.targets]
+x86_64_unknown_linux_gnu = {}
 requires = [
     "gtk4",
     "glib2",
