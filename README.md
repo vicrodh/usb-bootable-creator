@@ -7,11 +7,20 @@
   ![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
   ![Rust](https://img.shields.io/badge/Rust-2024%20edition-orange)
   ![GTK4](https://img.shields.io/badge/GTK-4.x-blueviolet)
+  <a href="https://github.com/vicrodh/usb-bootable-creator/releases/tag/v0.2.0-alpha"><img src="https://img.shields.io/github/v/release/vicrodh/usb-bootable-creator?label=Release" alt="Release" /></a>
+  <a href="https://github.com/vicrodh/usb-bootable-creator/releases/tag/v0.2.0-alpha"><img src="https://img.shields.io/badge/AppImage-Download-brightgreen" alt="AppImage" /></a>
+  <a href="https://aur.archlinux.org/packages/majusb"><img src="https://img.shields.io/aur/version/majusb?label=AUR&logo=arch-linux" alt="AUR" /></a>
 </div>
 
 A modern, cross-platform USB bootable drive creator written in Rust with a GTK4 GUI. Easily write Linux or Windows ISO images to USB drives with real-time progress, robust error handling, and a polished, user-friendly interface.
 
 [Read CONTRIBUTING.md before submitting changes.](CONTRIBUTING.md)
+
+
+## Downloads
+- **AppImage (recommended):** [v0.2.0-alpha](https://github.com/vicrodh/usb-bootable-creator/releases/tag/v0.2.0-alpha) — bundles `wimlib-imagex` and `sgdisk`.
+- **AUR:** `majusb` (tag 0.2.0-alpha; requires wimlib/gptfdisk).
+- **DEB:** available in the release, but untested—use with caution or build from source.
 
 ---
 

@@ -1,7 +1,7 @@
 pkgname=majusb-bootable-creator
 pkgver=0.2.0.alpha
-pkgrel=1
 _tag=0.2.0-alpha
+pkgrel=1
 arch=('x86_64')
 url="https://github.com/vicrodh/usb-bootable-creator"
 license=('MIT')
@@ -36,5 +36,5 @@ package() {
   install -Dm644 assets/icons/icon-256x256.png "$pkgdir/usr/share/icons/hicolor/256x256/apps/majusb-bootable-creator.png"
   install -Dm644 assets/icons/icon-512x512.png "$pkgdir/usr/share/icons/hicolor/512x512/apps/majusb-bootable-creator.png"
   install -Dm644 assets/icons/icon.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/majusb-bootable-creator.svg"
-  install -Dm644 majusb-bootable-creator.desktop "$pkgdir/usr/share/applications/majusb-bootable-creator.desktop"
+  install -Dm644 assets/majusb-bootable-creator.desktop "$pkgdir/usr/share/applications/majusb-bootable-creator.desktop"
 }
