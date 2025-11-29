@@ -155,7 +155,6 @@ jobs:
           cat > "$APPDIR"/AppRun <<'EOF'
           #!/bin/sh
           HERE="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
-          export APPIMAGE_EXTRACT_AND_RUN=${APPIMAGE_EXTRACT_AND_RUN:-1}
           exec "$HERE/usr/bin/rust-usb-bootable-creator" "$@"
           EOF
           chmod +x "$APPDIR"/AppRun
