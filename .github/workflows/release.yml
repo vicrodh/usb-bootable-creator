@@ -20,8 +20,6 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
 
       - name: Install system dependencies
         run: |
@@ -34,21 +32,21 @@ jobs:
 
       - name: Build release binaries
         run: |
-          cargo build --release --target ${{ matrix.target }}
+          cargo build --release
 
       - name: Prepare assets for packaging
         run: |
           mkdir -p dist/icons
           cp assets/icons/icon-128x128.png dist/icons/majusb-bootable-creator.png
           cp assets/majusb-bootable-creator.desktop dist/
-          cp target/${{ matrix.target }}/release/rust-usb-bootable-creator dist/
-          cp target/${{ matrix.target }}/release/cli_helper dist/
+          cp target/release/rust-usb-bootable-creator dist/
+          cp target/release/cli_helper dist/
 
       - name: Build .deb package
         run: |
           cargo install cargo-deb
-          cargo deb --no-build --target ${{ matrix.target }}
-          cp target/${{ matrix.target }}/debian/*.deb dist/ || cp target/debian/*.deb dist/
+          cargo deb --no-build
+          cp target/debian/*.deb dist/
 
       - name: Ensure RPM metadata section exists
         run: |
@@ -60,9 +58,8 @@ jobs:
       - name: Build .rpm package
         run: |
           cargo install cargo-rpm
-          cargo rpm build --target ${{ matrix.target }}
-          find "target/${{ matrix.target }}/release/rpmbuild/RPMS" -name '*.rpm' -exec cp {} dist/ \; \
-            || find target/release/rpmbuild/RPMS -name '*.rpm' -exec cp {} dist/ \;
+          cargo rpm build
+          find target/release/rpmbuild/RPMS -name '*.rpm' -exec cp {} dist/ \;
 
       - name: Build AppImage
         env:
