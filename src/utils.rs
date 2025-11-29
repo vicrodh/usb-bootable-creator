@@ -5,6 +5,7 @@ use std::fs;
 use std::io;
 use std::path::Path;
 use std::process::Command;
+use std::os::unix::fs::PermissionsExt;
 
 use libc; // For geteuid
 use serde_json; // For JSON parsing
@@ -399,6 +400,9 @@ pub fn check_required_packages() -> Option<(Vec<String>, String)> {
 
 /// Check required (MVP Linux) and optional (Windows/persistence) packages separately.
 pub fn check_required_packages_split() -> Option<PackageCheckResult> {
+    use std::env;
+    use std::path::PathBuf;
+
     // Required for MVP (Linux writing)
     let required_bins = vec![
         "lsblk",
@@ -623,12 +627,36 @@ pub fn check_required_packages_split() -> Option<PackageCheckResult> {
         .collect();
 
     // Collect missing packages (deduplicated and sorted)
+    // Also allow resolving binaries bundled inside the AppImage (APPDIR/usr/bin or alongside the executable).
+    let mut search_paths: Vec<PathBuf> = env::var_os("PATH")
+        .map(|p| env::split_paths(&p).collect())
+        .unwrap_or_else(Vec::new);
+    if let Ok(appdir) = env::var("APPDIR") {
+        search_paths.push(PathBuf::from(appdir).join("usr/bin"));
+    }
+    if let Ok(exe) = env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            search_paths.push(dir.to_path_buf());
+            search_paths.push(dir.join("..").join("usr/bin"));
+        }
+    }
+
     use std::collections::BTreeSet;
     let mut missing_required: BTreeSet<String> = BTreeSet::new();
     let mut missing_optional: BTreeSet<String> = BTreeSet::new();
 
+    let bin_exists = |bin: &str| -> bool {
+        for p in &search_paths {
+            let candidate = p.join(bin);
+            if candidate.is_file() && candidate.metadata().map(|m| m.permissions().mode() & 0o111 != 0).unwrap_or(false) {
+                return true;
+            }
+        }
+        which::which(bin).is_ok()
+    };
+
     for &bin in &required_bins {
-        if which::which(bin).is_err() {
+        if !bin_exists(bin) {
             let pkg_name = pkg_map
                 .get(distro)
                 .and_then(|m| m.get(bin))
@@ -639,7 +667,7 @@ pub fn check_required_packages_split() -> Option<PackageCheckResult> {
     }
 
     for &bin in &optional_bins {
-        if which::which(bin).is_err() {
+        if !bin_exists(bin) {
             let pkg_name = pkg_map
                 .get(distro)
                 .and_then(|m| m.get(bin))
