@@ -40,7 +40,7 @@ jobs:
         run: |
           mkdir -p dist/icons
           cp assets/icons/icon-128x128.png dist/icons/majusb-bootable-creator.png
-          cp majusb-bootable-creator.desktop dist/
+          cp assets/majusb-bootable-creator.desktop dist/
           cp target/${{ matrix.target }}/release/rust-usb-bootable-creator dist/
           cp target/${{ matrix.target }}/release/cli_helper dist/
 
