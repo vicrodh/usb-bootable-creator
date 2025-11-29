@@ -63,17 +63,6 @@ jobs:
       #     cargo rpm build
       #     find target/release/rpmbuild/RPMS/ -name '*.rpm' -exec cp {} dist/ \;
 
-      - name: Set up Flatpak
-        uses: flatpak/flatpak-github-actions/setup-flatpak@v5
-
-      - name: Build Flatpak package
-        uses: flatpak/flatpak-github-actions/flatpak-builder@v5
-        with:
-          manifest-path: majusb-bootable-creator.flatpak.yml
-          build-dir: flatpak-app
-          cache-key: flatpak-builder-${{ github.sha }}
-          cache: true
-
       - name: Build AppImage
         env:
           ARCH: x86_64
@@ -112,7 +101,6 @@ jobs:
           files: |
             dist/*.deb
             dist/*.tar.gz
-            dist/flatpak/*
             dist/PKGBUILD
             dist/*.AppImage
             dist/rust-usb-bootable-creator
