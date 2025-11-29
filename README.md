@@ -1,3 +1,5 @@
+![MajUSB logo](.github/docs/icon.svg)
+
 # MajUSB Bootable Creator
 
 A modern, cross-platform USB bootable drive creator written in Rust with a GTK4 GUI. Easily write Linux or Windows ISO images to USB drives with real-time progress, robust error handling, and a polished, user-friendly interface.

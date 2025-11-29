@@ -69,15 +69,31 @@ jobs:
           APPIMAGE_EXTRACT_AND_RUN: 1
         run: |
           APPDIR="$PWD/AppDir"
-          mkdir -p "$APPDIR"/usr/bin "$APPDIR"/usr/share/applications "$APPDIR"/usr/share/icons/hicolor/128x128/apps
+          mkdir -p "$APPDIR"/usr/bin "$APPDIR"/usr/share/applications \
+            "$APPDIR"/usr/share/icons/hicolor/128x128/apps \
+            "$APPDIR"/usr/share/icons/hicolor/256x256/apps \
+            "$APPDIR"/usr/share/icons/hicolor/512x512/apps
           cp dist/rust-usb-bootable-creator "$APPDIR"/usr/bin/rust-usb-bootable-creator.bin
           cp dist/cli_helper "$APPDIR"/usr/bin/
           cp dist/majusb-bootable-creator.desktop "$APPDIR"/usr/share/applications/
           cp dist/icons/majusb-bootable-creator.png "$APPDIR"/usr/share/icons/hicolor/128x128/apps/majusb-bootable-creator.png
+          cp assets/icons/icon-256x256.png "$APPDIR"/usr/share/icons/hicolor/256x256/apps/majusb-bootable-creator.png
+          cp assets/icons/icon-512x512.png "$APPDIR"/usr/share/icons/hicolor/512x512/apps/majusb-bootable-creator.png
 
           cat > "$APPDIR"/usr/bin/rust-usb-bootable-creator <<'EOF'
           #!/bin/sh
-          ORIG_BIN="$(dirname "$0")/rust-usb-bootable-creator.bin"
+          script_dir="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
+          appdir="$(CDPATH= cd -- "$script_dir/.." && pwd)"
+
+          find_bin() {
+            for candidate in \
+              "$script_dir/rust-usb-bootable-creator.bin" \
+              "$appdir/usr/bin/rust-usb-bootable-creator.bin" \
+              "$appdir/rust-usb-bootable-creator.bin"; do
+              [ -x "$candidate" ] && echo "$candidate" && return 0
+            done
+            return 1
+          }
 
           ensure_exec_tmp() {
             BASE="${TMPDIR:-/tmp}"
@@ -102,9 +118,12 @@ jobs:
           }
 
           export TMPDIR="$(ensure_exec_tmp)"
+          ORIG_BIN="$(find_bin)" || { echo "rust-usb-bootable-creator.bin not found" >&2; exit 1; }
           exec "$ORIG_BIN" "$@"
           EOF
           chmod +x "$APPDIR"/usr/bin/rust-usb-bootable-creator
+          ln -sf usr/bin/rust-usb-bootable-creator "$APPDIR"/rust-usb-bootable-creator
+          ln -sf usr/bin/rust-usb-bootable-creator.bin "$APPDIR"/rust-usb-bootable-creator.bin
 
           wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
           wget -q https://raw.githubusercontent.com/linuxdeploy/linuxdeploy-plugin-gtk/master/linuxdeploy-plugin-gtk.sh
