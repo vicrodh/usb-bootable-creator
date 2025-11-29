@@ -77,10 +77,19 @@ jobs:
           chmod +x "$APPDIR"/usr/bin/rust-usb-bootable-creator.bin
           cp dist/cli_helper "$APPDIR"/usr/bin/
           chmod +x "$APPDIR"/usr/bin/cli_helper
+          # bundle wimlib-imagex for offline use
+          if command -v wimlib-imagex >/dev/null 2>&1; then
+            cp "$(command -v wimlib-imagex)" "$APPDIR"/usr/bin/wimlib-imagex
+            chmod +x "$APPDIR"/usr/bin/wimlib-imagex
+          fi
           cp dist/majusb-bootable-creator.desktop "$APPDIR"/usr/share/applications/
           cp dist/icons/majusb-bootable-creator.png "$APPDIR"/usr/share/icons/hicolor/128x128/apps/majusb-bootable-creator.png
           cp assets/icons/icon-256x256.png "$APPDIR"/usr/share/icons/hicolor/256x256/apps/majusb-bootable-creator.png
           cp assets/icons/icon-512x512.png "$APPDIR"/usr/share/icons/hicolor/512x512/apps/majusb-bootable-creator.png
+          mkdir -p "$APPDIR"/usr/share/licenses/majusb-bootable-creator
+          cp LICENSE "$APPDIR"/usr/share/licenses/majusb-bootable-creator/LICENSE
+          cp LICENSE.wimlib "$APPDIR"/usr/share/licenses/majusb-bootable-creator/
+          cp THIRD_PARTY_LICENSES.md "$APPDIR"/usr/share/licenses/majusb-bootable-creator/
 
           cat > "$APPDIR"/usr/bin/rust-usb-bootable-creator <<'EOF'
           #!/bin/sh
@@ -119,9 +128,17 @@ jobs:
             echo "$FALLBACK"
           }
 
-          export TMPDIR="$(ensure_exec_tmp)"
+          TMPDIR="$(ensure_exec_tmp)"
+          export TMPDIR
+
+          # If not yet in extract-and-run mode, re-run the AppImage with safe TMPDIR
+          if [ -n "$APPIMAGE" ] && [ "${APPIMAGE_EXTRACT_AND_RUN:-0}" != "1" ]; then
+            export APPIMAGE_EXTRACT_AND_RUN=1
+            exec env TMPDIR="$TMPDIR" "$APPIMAGE" "$@"
+          fi
+
           ORIG_BIN="$(find_bin)" || { echo "rust-usb-bootable-creator.bin not found" >&2; exit 1; }
-          exec "$ORIG_BIN" "$@"
+          exec env TMPDIR="$TMPDIR" "$ORIG_BIN" "$@"
           EOF
           chmod +x "$APPDIR"/usr/bin/rust-usb-bootable-creator
           ln -sf usr/bin/rust-usb-bootable-creator "$APPDIR"/rust-usb-bootable-creator
