@@ -23,6 +23,18 @@ name = "rust_usb_bootable_creator"
 path = "src/lib.rs"
 
 [package.metadata.deb]
+depends = [
+    "libgtk-4-1",
+    "libglib2.0-0",
+    "udev",
+    "parted",
+    "rsync",
+    "dosfstools",
+    "ntfs-3g",
+    "policykit-1",
+    "gdisk",
+    "wimtools"
+]
 assets = [
     ["target/release/rust-usb-bootable-creator", "usr/bin/rust-usb-bootable-creator", "755"],
     ["target/release/cli_helper", "usr/bin/cli_helper", "755"],
@@ -46,7 +58,9 @@ requires = [
     "rsync",
     "dosfstools",
     "ntfs-3g",
-    "policykit"
+    "policykit",
+    "gptfdisk",
+    "wimlib"
 ]
 assets = [
     ["target/release/rust-usb-bootable-creator", "/usr/bin/rust-usb-bootable-creator", "755"],
