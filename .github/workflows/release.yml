@@ -48,18 +48,18 @@ jobs:
           cargo deb --no-build
           cp target/debian/*.deb dist/
 
-      - name: Ensure RPM metadata section exists
-        run: |
-          if ! grep -q '\[package.metadata.rpm\]' Cargo.toml; then
-            echo "No [package.metadata.rpm] found. Running cargo rpm init..."
-            cargo rpm init
-          fi
+      # - name: Ensure RPM metadata section exists
+      #   run: |
+      #     if ! grep -q '\[package.metadata.rpm\]' Cargo.toml; then
+      #       echo "No [package.metadata.rpm] found. Running cargo rpm init..."
+      #       cargo rpm init
+      #     fi
 
-      - name: Build .rpm package
-        run: |
-          cargo install cargo-rpm
-          cargo rpm build
-          find target/release/rpmbuild/RPMS -name '*.rpm' -exec cp {} dist/ \;
+      # - name: Build .rpm package
+      #   run: |
+      #     cargo install cargo-rpm
+      #     cargo rpm build
+      #     find target/release/rpmbuild/RPMS -name '*.rpm' -exec cp {} dist/ \;
 
       - name: Build AppImage
         env:
