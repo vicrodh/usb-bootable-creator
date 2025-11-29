@@ -70,10 +70,41 @@ jobs:
         run: |
           APPDIR="$PWD/AppDir"
           mkdir -p "$APPDIR"/usr/bin "$APPDIR"/usr/share/applications "$APPDIR"/usr/share/icons/hicolor/128x128/apps
-          cp dist/rust-usb-bootable-creator "$APPDIR"/usr/bin/
+          cp dist/rust-usb-bootable-creator "$APPDIR"/usr/bin/rust-usb-bootable-creator.bin
           cp dist/cli_helper "$APPDIR"/usr/bin/
           cp dist/majusb-bootable-creator.desktop "$APPDIR"/usr/share/applications/
           cp dist/icons/majusb-bootable-creator.png "$APPDIR"/usr/share/icons/hicolor/128x128/apps/majusb-bootable-creator.png
+
+          cat > "$APPDIR"/usr/bin/rust-usb-bootable-creator <<'EOF'
+#!/bin/sh
+ORIG_BIN="$(dirname "$0")/rust-usb-bootable-creator.bin"
+
+ensure_exec_tmp() {
+  BASE="${TMPDIR:-/tmp}"
+  PROBE="$(mktemp -d "$BASE/majusb-probe-XXXXXX" 2>/dev/null)" || PROBE=""
+  if [ -n "$PROBE" ]; then
+    cat >"$PROBE/.x" <<'EOS'
+#!/bin/sh
+exit 0
+EOS
+    chmod +x "$PROBE/.x" 2>/dev/null
+    "$PROBE/.x" >/dev/null 2>&1
+    STATUS=$?
+    rm -rf "$PROBE" >/dev/null 2>&1
+    if [ "$STATUS" -eq 0 ]; then
+      echo "$BASE"
+      return
+    fi
+  fi
+  FALLBACK="$HOME/.cache/majusb-run"
+  mkdir -p "$FALLBACK"
+  echo "$FALLBACK"
+}
+
+export TMPDIR="$(ensure_exec_tmp)"
+exec "$ORIG_BIN" "$@"
+EOF
+          chmod +x "$APPDIR"/usr/bin/rust-usb-bootable-creator
 
           wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
           wget -q https://raw.githubusercontent.com/linuxdeploy/linuxdeploy-plugin-gtk/master/linuxdeploy-plugin-gtk.sh
