@@ -76,6 +76,7 @@ jobs:
           cp dist/rust-usb-bootable-creator "$APPDIR"/usr/bin/rust-usb-bootable-creator.bin
           chmod +x "$APPDIR"/usr/bin/rust-usb-bootable-creator.bin
           cp dist/cli_helper "$APPDIR"/usr/bin/
+          chmod +x "$APPDIR"/usr/bin/cli_helper
           cp dist/majusb-bootable-creator.desktop "$APPDIR"/usr/share/applications/
           cp dist/icons/majusb-bootable-creator.png "$APPDIR"/usr/share/icons/hicolor/128x128/apps/majusb-bootable-creator.png
           cp assets/icons/icon-256x256.png "$APPDIR"/usr/share/icons/hicolor/256x256/apps/majusb-bootable-creator.png
@@ -138,10 +139,8 @@ jobs:
           wget -q https://raw.githubusercontent.com/linuxdeploy/linuxdeploy-plugin-gtk/master/linuxdeploy-plugin-gtk.sh
           chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-gtk.sh
 
-          LINUXDEPLOY="$PWD/linuxdeploy-x86_64.AppImage" \
-          APPIMAGE_EXTRACT_AND_RUN=1 \
           APPIMAGE_NAME="majusb-creator-x86_64.AppImage"
-          ./linuxdeploy-x86_64.AppImage --appdir "$APPDIR" --plugin gtk --output appimage
+          ./linuxdeploy-x86_64.AppImage --appdir "$APPDIR" --plugin gtk --custom-apprun "$APPDIR/AppRun" --output appimage
           mv MajUSB_Bootable_Creator*.AppImage dist/ || mv *.AppImage dist/
           for f in dist/*.AppImage; do mv "$f" "dist/$APPIMAGE_NAME"; break; done
 
