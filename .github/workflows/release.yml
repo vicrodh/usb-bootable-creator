@@ -103,6 +103,7 @@ jobs:
           #!/bin/sh
           script_dir="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
           appdir="$(CDPATH= cd -- "$script_dir/.." && pwd)"
+          export PATH="$script_dir:$appdir/usr/bin:$PATH"
 
           find_bin() {
             for candidate in \
@@ -163,6 +164,7 @@ jobs:
           cat > "$APPDIR"/AppRun <<'EOF'
           #!/bin/sh
           HERE="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
+          export PATH="$HERE/usr/bin:$PATH"
           exec "$HERE/usr/bin/rust-usb-bootable-creator" "$@"
           EOF
           chmod +x "$APPDIR"/AppRun
