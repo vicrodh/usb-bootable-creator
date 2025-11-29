@@ -1,5 +1,5 @@
 pkgname=majusb-bootable-creator
-pkgver=0.2.0.alpha
+pkgver=0.2.0-alpha
 pkgrel=1
 arch=('x86_64')
 url="https://github.com/vicrodh/usb-bootable-creator"
@@ -19,16 +19,16 @@ depends=(
   'gptfdisk'
 )
 makedepends=('rust' 'cargo' 'pkgconf')
-source=("$pkgname-$pkgver.tar.gz"::"$url/archive/refs/tags/v0.2.0-alpha.tar.gz")
+source=("$pkgname-$pkgver.tar.gz"::"$url/archive/refs/tags/v$pkgver.tar.gz")
 sha256sums=('SKIP')
 
 build() {
-  cd "$srcdir/$pkgname-$pkgver"
+  cd "$srcdir/usb-bootable-creator-$pkgver"
   cargo build --release
 }
 
 package() {
-  cd "$srcdir/$pkgname-$pkgver"
+  cd "$srcdir/usb-bootable-creator-$pkgver"
   install -Dm755 target/release/rust-usb-bootable-creator "$pkgdir/usr/bin/rust-usb-bootable-creator"
   install -Dm755 target/release/cli_helper "$pkgdir/usr/bin/cli_helper"
   install -Dm644 assets/icons/icon-128x128.png "$pkgdir/usr/share/icons/hicolor/128x128/apps/majusb-bootable-creator.png"
