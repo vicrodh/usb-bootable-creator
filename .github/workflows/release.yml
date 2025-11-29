@@ -30,7 +30,7 @@ jobs:
             build-essential libgtk-4-dev libglib2.0-dev libudev-dev \
             pkg-config zlib1g-dev libssl-dev libparted-dev \
             dosfstools ntfs-3g parted rsync policykit-1 \
-            flatpak-builder rpm wimtools libfuse2 patchelf
+            flatpak-builder rpm wimtools libfuse2 patchelf gdisk
 
       - name: Build release binaries
         run: |
@@ -82,6 +82,11 @@ jobs:
             cp "$(command -v wimlib-imagex)" "$APPDIR"/usr/bin/wimlib-imagex
             chmod +x "$APPDIR"/usr/bin/wimlib-imagex
           fi
+          # bundle sgdisk (from gdisk/gptfdisk) for offline GPT repair
+          if command -v sgdisk >/dev/null 2>&1; then
+            cp "$(command -v sgdisk)" "$APPDIR"/usr/bin/sgdisk
+            chmod +x "$APPDIR"/usr/bin/sgdisk
+          fi
           cp dist/majusb-bootable-creator.desktop "$APPDIR"/usr/share/applications/
           cp dist/icons/majusb-bootable-creator.png "$APPDIR"/usr/share/icons/hicolor/128x128/apps/majusb-bootable-creator.png
           cp assets/icons/icon-256x256.png "$APPDIR"/usr/share/icons/hicolor/256x256/apps/majusb-bootable-creator.png
@@ -90,6 +95,9 @@ jobs:
           cp LICENSE "$APPDIR"/usr/share/licenses/majusb-bootable-creator/LICENSE
           cp LICENSE.wimlib "$APPDIR"/usr/share/licenses/majusb-bootable-creator/
           cp THIRD_PARTY_LICENSES.md "$APPDIR"/usr/share/licenses/majusb-bootable-creator/
+          if [ -f /usr/share/doc/gdisk/copyright ]; then
+            cp /usr/share/doc/gdisk/copyright "$APPDIR"/usr/share/licenses/majusb-bootable-creator/COPYING.gdisk
+          fi
 
           cat > "$APPDIR"/usr/bin/rust-usb-bootable-creator <<'EOF'
           #!/bin/sh
