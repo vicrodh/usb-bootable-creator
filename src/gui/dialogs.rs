@@ -3,8 +3,9 @@
 use gtk4::prelude::*;
 use gtk4::{ApplicationWindow, Dialog, MessageDialog, ButtonsType, MessageType, ResponseType,
             Button, Box as GtkBox, Label, TextView, Orientation, FileChooserAction,
-            FileChooserDialog, FileFilter, Entry};
+            FileChooserDialog, FileFilter, Entry, Window};
 use glib::MainContext;
+use crate::services::{OsCategory, mock_list_os_by_category};
 
 /// Show missing packages dialog with installation command
 pub fn show_missing_packages_dialog_simple(
@@ -180,4 +181,127 @@ pub fn show_dd_mode_warning_dialog(parent: &ApplicationWindow) -> bool {
     let response = MainContext::default().block_on(dialog.run_future());
     dialog.close();
     response == ResponseType::Yes
+}
+
+/// ISO Downloader Dialog - POC implementation
+pub fn show_iso_downloader_dialog(parent: Option<&ApplicationWindow>) {
+    let window = Window::new();
+    window.set_title(Some("ISO Downloader"));
+    window.set_default_size(800, 600);
+    window.set_modal(true);
+
+    if let Some(p) = parent {
+        window.set_transient_for(Some(p));
+    }
+
+    let main_box = GtkBox::new(Orientation::Vertical, 10);
+    main_box.set_margin_top(10);
+    main_box.set_margin_bottom(10);
+    main_box.set_margin_start(10);
+    main_box.set_margin_end(10);
+
+    // Title
+    let title_label = Label::builder()
+        .label("📀 ISO Downloader")
+        .css_classes(["title-1"])
+        .build();
+    main_box.append(&title_label);
+
+    // Category selection box
+    let category_box = GtkBox::new(Orientation::Horizontal, 10);
+    let category_label = Label::new(Some("Select category:"));
+
+    let linux_button = Button::with_label("🐧 Linux");
+    let windows_button = Button::with_label("🪟 Windows");
+
+    category_box.append(&category_label);
+    category_box.append(&linux_button);
+    category_box.append(&windows_button);
+    main_box.append(&category_box);
+
+    // Results log text view
+    let results_label = Label::new(Some("API Results:"));
+    main_box.append(&results_label);
+
+    let log_textview = TextView::new();
+    log_textview.set_editable(false);
+    log_textview.set_wrap_mode(gtk4::WrapMode::Word);
+    log_textview.set_vexpand(true);
+
+    let scrolled_window = gtk4::ScrolledWindow::builder()
+        .child(&log_textview)
+        .min_content_height(300)
+        .build();
+    main_box.append(&scrolled_window);
+
+    // Close button
+    let close_button = Button::with_label("Close");
+    main_box.append(&close_button);
+
+    window.set_child(Some(&main_box));
+
+    // Button connections
+    let log_buffer = log_textview.buffer();
+    let window_clone = window.clone();
+
+    linux_button.connect_clicked(move |_| {
+        let buffer = log_buffer.clone();
+        append_to_log(&buffer, "Fetching Linux distributions...\n");
+
+        let response = mock_list_os_by_category(OsCategory::Linux);
+
+        append_to_log(&buffer, &format!("✅ Success: {}\n", response.message.unwrap_or_default()));
+
+        for os in &response.data {
+            append_to_log(&buffer, &format!(
+                "📦 {} {}\n   ID: {}\n   Size: {}MB\n   {}\n\n",
+                os.name,
+                os.version,
+                os.id,
+                os.size_mb.unwrap_or(0),
+                os.description.as_deref().unwrap_or_default()
+            ));
+        }
+
+        if response.data.is_empty() {
+            append_to_log(&buffer, "❌ No Linux distributions found\n");
+        }
+    });
+
+    let log_buffer_windows = log_textview.buffer();
+    windows_button.connect_clicked(move |_| {
+        let buffer = log_buffer_windows.clone();
+        append_to_log(&buffer, "Fetching Windows versions...\n");
+
+        let response = mock_list_os_by_category(OsCategory::Windows);
+
+        append_to_log(&buffer, &format!("✅ Success: {}\n", response.message.unwrap_or_default()));
+
+        for os in &response.data {
+            append_to_log(&buffer, &format!(
+                "📦 {} {}\n   ID: {}\n   Size: {}MB\n   {}\n\n",
+                os.name,
+                os.version,
+                os.id,
+                os.size_mb.unwrap_or(0),
+                os.description.as_deref().unwrap_or_default()
+            ));
+        }
+
+        if response.data.is_empty() {
+            append_to_log(&buffer, "❌ No Windows versions found\n");
+        }
+    });
+
+    close_button.connect_clicked(move |_| {
+        window_clone.close();
+    });
+
+    window.show();
+}
+
+/// Helper function to append text to text buffer
+fn append_to_log(buffer: &gtk4::TextBuffer, text: &str) {
+    let mut end_iter = buffer.end_iter();
+    buffer.insert(&mut end_iter, text);
 }

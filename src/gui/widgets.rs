@@ -13,8 +13,8 @@ pub fn create_main_container() -> GtkBox {
     vbox
 }
 
-/// Create ISO selection widget (label + entry + browse button)
-pub fn create_iso_selection_widget() -> (GtkBox, Entry, Button) {
+/// Create ISO selection widget (label + entry + browse button + download button)
+pub fn create_iso_selection_widget() -> (GtkBox, Entry, Button, Button) {
     let iso_hbox = GtkBox::new(Orientation::Horizontal, 8);
     let iso_label = Label::new(Some("ISO Image:"));
     iso_label.set_halign(gtk4::Align::Start);
@@ -35,12 +35,21 @@ pub fn create_iso_selection_widget() -> (GtkBox, Entry, Button) {
     iso_button.set_tooltip_text(Some("Browse for ISO file"));
     iso_button.set_margin_top(3);
     iso_button.set_margin_bottom(3);
+    let download_button = Button::builder()
+        .icon_name("folder-download")
+        .build();
+    download_button.set_hexpand(false);
+    download_button.set_halign(gtk4::Align::End);
+    download_button.set_tooltip_text(Some("Download ISO from os.click"));
+    download_button.set_margin_top(3);
+    download_button.set_margin_bottom(3);
 
     iso_hbox.append(&iso_label);
     iso_hbox.append(&iso_entry);
     iso_hbox.append(&iso_button);
+    iso_hbox.append(&download_button);
 
-    (iso_hbox, iso_entry, iso_button)
+    (iso_hbox, iso_entry, iso_button, download_button)
 }
 
 /// Create OS detection label

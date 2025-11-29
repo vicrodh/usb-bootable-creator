@@ -165,7 +165,7 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
             let vbox = gui_widgets::create_main_container();
 
             // ISO selection (inline label, increased height)
-            let (iso_hbox, iso_entry, iso_button) = gui_widgets::create_iso_selection_widget();
+            let (iso_hbox, iso_entry, iso_button, download_button) = gui_widgets::create_iso_selection_widget();
             vbox.append(&iso_hbox);
 
             // --- OS label (for detection) ---
@@ -357,6 +357,16 @@ pub fn run_gui(needs_root: bool, is_flatpak: bool) {
                             &os_label,
                             move || reset_advanced_options(),
                         );
+                    }
+                });
+            }
+
+            // --- Download ISO button handler ---
+            {
+                let window_weak_download = window_weak.clone();
+                download_button.connect_clicked(move |_| {
+                    if let Some(window) = window_weak_download.upgrade() {
+                        gui_dialogs::show_iso_downloader_dialog(Some(&window));
                     }
                 });
             }

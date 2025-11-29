@@ -3,6 +3,7 @@ mod gui;
 mod utils;
 mod error;
 mod windows;
+mod services;
 
 use gui::run_gui;
 
